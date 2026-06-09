@@ -1,0 +1,34 @@
+name = "lamesasocial-backend"
+main = "src/index.ts"
+compatibility_date = "2026-06-09"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lamesa-social-db"
+database_id = "81077cb6-0c6f-47f0-8ce8-9d3dcecd8f44"
+
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "lamesa-social-images"
+
+[vars]
+CORS_ORIGINS = "http://localhost:5174,http://localhost:5173,https://lamesasocial.com.ar,https://www.lamesasocial.com.ar,https://lamesasocial.app,https://www.lamesasocial.app"
+
+[env.production]
+name = "lamesasocial-backend-prod"
+
+[[env.production.routes]]
+pattern = "api.lamesasocial.com.ar"
+custom_domain = true
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "lamesa-social-db-prod"
+database_id = "86ed15fa-61f2-466b-b4ad-8458ee27ef2a"
+
+[[env.production.r2_buckets]]
+binding = "IMAGES"
+bucket_name = "lamesa-social-images-prod"
+
+[env.production.vars]
+CORS_ORIGINS = "http://localhost:5174,http://localhost:5173,https://lamesasocial.com.ar,https://www.lamesasocial.com.ar"

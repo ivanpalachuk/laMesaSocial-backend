@@ -1,0 +1,38 @@
+{
+  "name": "lamesasocial-backend",
+  "version": "1.0.0",
+  "description": "Cloudflare backend for La Mesa Social",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply lamesa-social-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply lamesa-social-db --remote"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ivanpalachuk/laMesaSocial-backend.git"
+  },
+  "keywords": [],
+  "author": "Ivan Palachuk",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ivanpalachuk/laMesaSocial-backend/issues"
+  },
+  "homepage": "https://github.com/ivanpalachuk/laMesaSocial-backend#readme",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.12.25",
+    "jose": "^6.2.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260609.1",
+    "@types/bcryptjs": "^2.4.6",
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^6.0.3",
+    "wrangler": "^4.99.0"
+  }
+}

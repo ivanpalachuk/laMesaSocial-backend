@@ -1,0 +1,1 @@
+ALTER TABLE encuentros ADD COLUMN price_per_person INTEGER NOT NULL DEFAULT 20000;

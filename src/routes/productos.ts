@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
 import { createDbClient } from "../db";
 import { productos } from "../db/schema";
 import { authMiddleware, type AppEnv } from "../middleware/auth";
@@ -9,6 +9,46 @@ const productosRoutes = new Hono<AppEnv>();
 
 type ProductoCondition = "nuevo" | "como_nuevo" | "usado";
 type ProductoStatus = "available" | "sold_out" | "draft";
+type ProductoSortField =
+  | "createdAt"
+  | "title"
+  | "price"
+  | "stock"
+  | "category"
+  | "difficulty";
+type SortOrder = "asc" | "desc";
+
+const SORTABLE_FIELDS: Record<ProductoSortField, typeof productos.createdAt> = {
+  createdAt: productos.createdAt,
+  title: productos.title,
+  price: productos.price,
+  stock: productos.stock,
+  category: productos.category,
+  difficulty: productos.difficulty,
+};
+
+function parsePositiveInt(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.floor(parsed);
+}
+
+function parseSortBy(value: string | undefined, fallback: ProductoSortField): ProductoSortField {
+  if (!value) return fallback;
+  if (value in SORTABLE_FIELDS) return value as ProductoSortField;
+  return fallback;
+}
+
+function parseSortOrder(value: string | undefined, fallback: SortOrder): SortOrder {
+  if (value === "asc" || value === "desc") return value;
+  return fallback;
+}
+
+function parseBooleanQuery(value: string | undefined): boolean | null {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return null;
+}
 
 function buildImageUrl(origin: string, imageKey: string | null) {
   if (!imageKey) return null;
@@ -24,13 +64,43 @@ function withImageUrl(origin: string, row: typeof productos.$inferSelect) {
 productosRoutes.get("/", async (c) => {
   const db = createDbClient(c.env.DB);
   const origin = new URL(c.req.url).origin;
+  const page = parsePositiveInt(c.req.query("page"), 1);
+  const pageSize = Math.min(parsePositiveInt(c.req.query("pageSize"), 12), 100);
+  const sortBy = parseSortBy(c.req.query("sortBy"), "createdAt");
+  const sortOrder = parseSortOrder(c.req.query("sortOrder"), "desc");
+  const whereClause = and(eq(productos.status, "available"), gt(productos.stock, 0));
+
+  const totalRow = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(productos)
+    .where(whereClause)
+    .get();
+  const total = Number(totalRow?.count ?? 0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const offset = (safePage - 1) * pageSize;
+
   const rows = await db
     .select()
     .from(productos)
-    .where(eq(productos.status, "available"))
-    .orderBy(desc(productos.createdAt))
+    .where(whereClause)
+    .orderBy(sortOrder === "asc" ? asc(SORTABLE_FIELDS[sortBy]) : desc(SORTABLE_FIELDS[sortBy]))
+    .limit(pageSize)
+    .offset(offset)
     .all();
-  return c.json({ productos: rows.map((r) => withImageUrl(origin, r)) });
+  return c.json({
+    productos: rows.map((r) => withImageUrl(origin, r)),
+    pagination: {
+      page: safePage,
+      pageSize,
+      total,
+      totalPages,
+    },
+    sorting: {
+      sortBy,
+      sortOrder,
+    },
+  });
 });
 
 // Public: list products in ludoteca
@@ -79,8 +149,67 @@ productosRoutes.use("*", authMiddleware);
 productosRoutes.get("/admin/all", async (c) => {
   const db = createDbClient(c.env.DB);
   const origin = new URL(c.req.url).origin;
-  const rows = await db.select().from(productos).orderBy(desc(productos.createdAt)).all();
-  return c.json({ productos: rows.map((r) => withImageUrl(origin, r)) });
+  const page = parsePositiveInt(c.req.query("page"), 1);
+  const pageSize = Math.min(parsePositiveInt(c.req.query("pageSize"), 20), 100);
+  const sortBy = parseSortBy(c.req.query("sortBy"), "createdAt");
+  const sortOrder = parseSortOrder(c.req.query("sortOrder"), "desc");
+  const q = (c.req.query("q") ?? "").trim().toLowerCase();
+  const category = c.req.query("category")?.trim() ?? "";
+  const status = c.req.query("status")?.trim() ?? "";
+  const enLudoteca = parseBooleanQuery(c.req.query("enLudoteca"));
+  const esFavorito = parseBooleanQuery(c.req.query("esFavorito"));
+
+  const filters: any[] = [];
+  if (q) {
+    filters.push(sql`lower(${productos.title}) like ${`%${q}%`}`);
+  }
+  if (category) {
+    filters.push(eq(productos.category, category));
+  }
+  if (status) {
+    filters.push(eq(productos.status, status as ProductoStatus));
+  }
+  if (enLudoteca !== null) {
+    filters.push(eq(productos.enLudoteca, enLudoteca));
+  }
+  if (esFavorito !== null) {
+    filters.push(eq(productos.esFavorito, esFavorito));
+  }
+
+  const whereClause = filters.length > 0 ? and(...filters) : undefined;
+
+  const totalRow = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(productos)
+    .where(whereClause)
+    .get();
+  const total = Number(totalRow?.count ?? 0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const offset = (safePage - 1) * pageSize;
+
+  const rows = await db
+    .select()
+    .from(productos)
+    .where(whereClause)
+    .orderBy(sortOrder === "asc" ? asc(SORTABLE_FIELDS[sortBy]) : desc(SORTABLE_FIELDS[sortBy]))
+    .limit(pageSize)
+    .offset(offset)
+    .all();
+
+  return c.json({
+    productos: rows.map((r) => withImageUrl(origin, r)),
+    pagination: {
+      page: safePage,
+      pageSize,
+      total,
+      totalPages,
+    },
+    sorting: {
+      sortBy,
+      sortOrder,
+    },
+  });
 });
 
 // Create

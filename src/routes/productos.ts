@@ -1,18 +1,18 @@
-import { Hono } from 'hono';
-import { desc, eq } from 'drizzle-orm';
-import { createDbClient } from '../db';
-import { productos } from '../db/schema';
-import { authMiddleware, type AppEnv } from '../middleware/auth';
-import { generateId } from '../utils/jwt';
+import { Hono } from "hono";
+import { and, desc, eq } from "drizzle-orm";
+import { createDbClient } from "../db";
+import { productos } from "../db/schema";
+import { authMiddleware, type AppEnv } from "../middleware/auth";
+import { generateId } from "../utils/jwt";
 
 const productosRoutes = new Hono<AppEnv>();
 
-type ProductoCondition = 'nuevo' | 'como_nuevo' | 'usado';
-type ProductoStatus = 'available' | 'sold_out' | 'draft';
+type ProductoCondition = "nuevo" | "como_nuevo" | "usado";
+type ProductoStatus = "available" | "sold_out" | "draft";
 
 function buildImageUrl(origin: string, imageKey: string | null) {
   if (!imageKey) return null;
-  const encoded = imageKey.split('/').map(encodeURIComponent).join('/');
+  const encoded = imageKey.split("/").map(encodeURIComponent).join("/");
   return `${origin}/api/images/${encoded}`;
 }
 
@@ -21,32 +21,62 @@ function withImageUrl(origin: string, row: typeof productos.$inferSelect) {
 }
 
 // Public: list available products
-productosRoutes.get('/', async (c) => {
+productosRoutes.get("/", async (c) => {
   const db = createDbClient(c.env.DB);
   const origin = new URL(c.req.url).origin;
   const rows = await db
     .select()
     .from(productos)
-    .where(eq(productos.status, 'available'))
+    .where(eq(productos.status, "available"))
+    .orderBy(desc(productos.createdAt))
+    .all();
+  return c.json({ productos: rows.map((r) => withImageUrl(origin, r)) });
+});
+
+// Public: list products in ludoteca
+productosRoutes.get("/ludoteca", async (c) => {
+  const db = createDbClient(c.env.DB);
+  const origin = new URL(c.req.url).origin;
+  const rows = await db
+    .select()
+    .from(productos)
+    .where(eq(productos.enLudoteca, true))
+    .orderBy(desc(productos.createdAt))
+    .all();
+  return c.json({ productos: rows.map((r) => withImageUrl(origin, r)) });
+});
+
+// Public: list favorite products
+productosRoutes.get("/favoritos", async (c) => {
+  const db = createDbClient(c.env.DB);
+  const origin = new URL(c.req.url).origin;
+  const rows = await db
+    .select()
+    .from(productos)
+    .where(eq(productos.esFavorito, true))
     .orderBy(desc(productos.createdAt))
     .all();
   return c.json({ productos: rows.map((r) => withImageUrl(origin, r)) });
 });
 
 // Public: single product
-productosRoutes.get('/:id', async (c) => {
+productosRoutes.get("/:id", async (c) => {
   const db = createDbClient(c.env.DB);
   const origin = new URL(c.req.url).origin;
-  const row = await db.select().from(productos).where(eq(productos.id, c.req.param('id'))).get();
-  if (!row) return c.json({ error: 'Producto not found' }, 404);
+  const row = await db
+    .select()
+    .from(productos)
+    .where(eq(productos.id, c.req.param("id")))
+    .get();
+  if (!row) return c.json({ error: "Producto not found" }, 404);
   return c.json({ producto: withImageUrl(origin, row) });
 });
 
 // All routes below require auth
-productosRoutes.use('*', authMiddleware);
+productosRoutes.use("*", authMiddleware);
 
 // Admin: list all products regardless of status
-productosRoutes.get('/admin/all', async (c) => {
+productosRoutes.get("/admin/all", async (c) => {
   const db = createDbClient(c.env.DB);
   const origin = new URL(c.req.url).origin;
   const rows = await db.select().from(productos).orderBy(desc(productos.createdAt)).all();
@@ -54,9 +84,9 @@ productosRoutes.get('/admin/all', async (c) => {
 });
 
 // Create
-productosRoutes.post('/', async (c) => {
+productosRoutes.post("/", async (c) => {
   const db = createDbClient(c.env.DB);
-  const userId = c.get('userId');
+  const userId = c.get("userId");
   const body = await c.req.json<{
     title: string;
     description?: string;
@@ -66,6 +96,7 @@ productosRoutes.post('/', async (c) => {
     maxPlayers?: number;
     minAge?: number;
     estimatedMinutes?: number;
+    difficulty?: number;
     publisher?: string;
     price: number;
     stock?: number;
@@ -74,26 +105,27 @@ productosRoutes.post('/', async (c) => {
   }>();
 
   if (!body.title || body.price === undefined) {
-    return c.json({ error: 'Missing required fields: title, price' }, 400);
+    return c.json({ error: "Missing required fields: title, price" }, 400);
   }
-  if (body.price < 0) return c.json({ error: 'Invalid price' }, 400);
+  if (body.price < 0) return c.json({ error: "Invalid price" }, 400);
 
   const now = new Date();
   const row = {
     id: generateId(),
     title: body.title,
     description: body.description ?? null,
-    category: body.category ?? 'otros',
-    condition: (body.condition ?? 'nuevo') as ProductoCondition,
+    category: body.category ?? "otros",
+    condition: (body.condition ?? "nuevo") as ProductoCondition,
     minPlayers: body.minPlayers ?? 2,
     maxPlayers: body.maxPlayers ?? 4,
     minAge: body.minAge ?? 8,
     estimatedMinutes: body.estimatedMinutes ?? 60,
+    difficulty: body.difficulty ?? 1.0,
     publisher: body.publisher ?? null,
     price: body.price,
     stock: body.stock ?? 1,
     imageKey: body.imageKey ?? null,
-    status: (body.status ?? 'available') as ProductoStatus,
+    status: (body.status ?? "available") as ProductoStatus,
     createdBy: userId,
     createdAt: now,
     updatedAt: now,
@@ -105,27 +137,32 @@ productosRoutes.post('/', async (c) => {
 });
 
 // Update
-productosRoutes.patch('/:id', async (c) => {
+productosRoutes.patch("/:id", async (c) => {
   const db = createDbClient(c.env.DB);
-  const id = c.req.param('id');
+  const id = c.req.param("id");
   const existing = await db.select().from(productos).where(eq(productos.id, id)).get();
-  if (!existing) return c.json({ error: 'Producto not found' }, 404);
+  if (!existing) return c.json({ error: "Producto not found" }, 404);
 
-  const body = await c.req.json<Partial<{
-    title: string;
-    description: string | null;
-    category: string;
-    condition: ProductoCondition;
-    minPlayers: number;
-    maxPlayers: number;
-    minAge: number;
-    estimatedMinutes: number;
-    publisher: string | null;
-    price: number;
-    stock: number;
-    imageKey: string | null;
-    status: ProductoStatus;
-  }>>();
+  const body = await c.req.json<
+    Partial<{
+      title: string;
+      description: string | null;
+      category: string;
+      condition: ProductoCondition;
+      minPlayers: number;
+      maxPlayers: number;
+      minAge: number;
+      estimatedMinutes: number;
+      difficulty: number;
+      publisher: string | null;
+      price: number;
+      stock: number;
+      imageKey: string | null;
+      status: ProductoStatus;
+      enLudoteca: boolean;
+      esFavorito: boolean;
+    }>
+  >();
 
   const patch: Record<string, unknown> = { updatedAt: new Date() };
   if (body.title !== undefined) patch.title = body.title;
@@ -136,14 +173,19 @@ productosRoutes.patch('/:id', async (c) => {
   if (body.maxPlayers !== undefined) patch.maxPlayers = body.maxPlayers;
   if (body.minAge !== undefined) patch.minAge = body.minAge;
   if (body.estimatedMinutes !== undefined) patch.estimatedMinutes = body.estimatedMinutes;
+  if (body.difficulty !== undefined) patch.difficulty = body.difficulty;
   if (body.publisher !== undefined) patch.publisher = body.publisher;
   if (body.price !== undefined) {
-    if (body.price < 0) return c.json({ error: 'Invalid price' }, 400);
+    if (body.price < 0) return c.json({ error: "Invalid price" }, 400);
     patch.price = body.price;
   }
   if (body.stock !== undefined) patch.stock = body.stock;
   if (body.imageKey !== undefined) patch.imageKey = body.imageKey;
   if (body.status !== undefined) patch.status = body.status;
+  if (body.enLudoteca !== undefined) patch.enLudoteca = body.enLudoteca;
+  if (body.esFavorito !== undefined) patch.esFavorito = body.esFavorito;
+  if (body.enLudoteca !== undefined) patch.enLudoteca = body.enLudoteca;
+  if (body.esFavorito !== undefined) patch.esFavorito = body.esFavorito;
 
   await db.update(productos).set(patch).where(eq(productos.id, id)).run();
   const updated = await db.select().from(productos).where(eq(productos.id, id)).get();
@@ -152,13 +194,13 @@ productosRoutes.patch('/:id', async (c) => {
 });
 
 // Delete
-productosRoutes.delete('/:id', async (c) => {
+productosRoutes.delete("/:id", async (c) => {
   const db = createDbClient(c.env.DB);
-  const id = c.req.param('id');
+  const id = c.req.param("id");
   const existing = await db.select().from(productos).where(eq(productos.id, id)).get();
-  if (!existing) return c.json({ error: 'Producto not found' }, 404);
+  if (!existing) return c.json({ error: "Producto not found" }, 404);
   await db.delete(productos).where(eq(productos.id, id)).run();
-  return c.json({ message: 'Producto deleted' });
+  return c.json({ message: "Producto deleted" });
 });
 
 export default productosRoutes;

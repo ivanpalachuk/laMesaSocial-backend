@@ -1,0 +1,1 @@
+ALTER TABLE productos ADD COLUMN difficulty REAL NOT NULL DEFAULT 1.0;

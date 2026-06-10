@@ -1,9 +1,9 @@
-import { Hono } from 'hono';
-import { and, desc, eq, gte } from 'drizzle-orm';
-import { createDbClient } from '../db';
-import { encuentros } from '../db/schema';
-import { authMiddleware, type AppEnv } from '../middleware/auth';
-import { generateId } from '../utils/jwt';
+import { Hono } from "hono";
+import { and, desc, eq, gte } from "drizzle-orm";
+import { createDbClient } from "../db";
+import { encuentros } from "../db/schema";
+import { authMiddleware, type AppEnv } from "../middleware/auth";
+import { generateId } from "../utils/jwt";
 
 const encuentrosRoutes = new Hono<AppEnv>();
 
@@ -13,9 +13,9 @@ function buildImageUrl(origin: string, imageKey: string | null) {
   }
 
   const encoded = imageKey
-    .split('/')
+    .split("/")
     .map((part) => encodeURIComponent(part))
-    .join('/');
+    .join("/");
 
   return `${origin}/api/images/${encoded}`;
 }
@@ -27,48 +27,44 @@ function withImageUrl(origin: string, row: typeof encuentros.$inferSelect) {
   };
 }
 
-encuentrosRoutes.get('/', async (c) => {
+encuentrosRoutes.get("/", async (c) => {
   const db = createDbClient(c.env.DB);
   const origin = new URL(c.req.url).origin;
   const rows = await db
     .select()
     .from(encuentros)
-    .where(and(eq(encuentros.status, 'published'), gte(encuentros.startsAt, new Date())))
+    .where(and(eq(encuentros.status, "published"), gte(encuentros.startsAt, new Date())))
     .all();
 
   return c.json({ encuentros: rows.map((row) => withImageUrl(origin, row)) });
 });
 
-encuentrosRoutes.get('/admin/all', authMiddleware, async (c) => {
+encuentrosRoutes.get("/admin/all", authMiddleware, async (c) => {
   const db = createDbClient(c.env.DB);
   const origin = new URL(c.req.url).origin;
-  const rows = await db
-    .select()
-    .from(encuentros)
-    .orderBy(desc(encuentros.startsAt))
-    .all();
+  const rows = await db.select().from(encuentros).orderBy(desc(encuentros.startsAt)).all();
 
   return c.json({ encuentros: rows.map((row) => withImageUrl(origin, row)) });
 });
 
-encuentrosRoutes.get('/:id', async (c) => {
+encuentrosRoutes.get("/:id", async (c) => {
   const db = createDbClient(c.env.DB);
   const origin = new URL(c.req.url).origin;
-  const id = c.req.param('id');
+  const id = c.req.param("id");
 
   const encuentro = await db.select().from(encuentros).where(eq(encuentros.id, id)).get();
   if (!encuentro) {
-    return c.json({ error: 'Encuentro not found' }, 404);
+    return c.json({ error: "Encuentro not found" }, 404);
   }
 
   return c.json({ encuentro: withImageUrl(origin, encuentro) });
 });
 
-encuentrosRoutes.use('*', authMiddleware);
+encuentrosRoutes.use("*", authMiddleware);
 
-encuentrosRoutes.post('/', async (c) => {
+encuentrosRoutes.post("/", async (c) => {
   const db = createDbClient(c.env.DB);
-  const userId = c.get('userId');
+  const userId = c.get("userId");
   const body = await c.req.json<{
     title: string;
     description?: string;
@@ -79,28 +75,28 @@ encuentrosRoutes.post('/', async (c) => {
     availableSeats?: number;
     pricePerPerson?: number;
     imageKey?: string;
-    status?: 'draft' | 'published' | 'cancelled';
+    status?: "draft" | "published" | "cancelled";
   }>();
 
   if (!body.title || !body.location || !body.startsAt) {
-    return c.json({ error: 'Missing required fields' }, 400);
+    return c.json({ error: "Missing required fields" }, 400);
   }
 
   const startsAt = new Date(body.startsAt);
   const endsAt = body.endsAt ? new Date(body.endsAt) : null;
 
   if (Number.isNaN(startsAt.getTime()) || (endsAt && Number.isNaN(endsAt.getTime()))) {
-    return c.json({ error: 'Invalid date format' }, 400);
+    return c.json({ error: "Invalid date format" }, 400);
   }
 
   const maxSeats = body.maxSeats ?? 20;
   const availableSeats = body.availableSeats ?? maxSeats;
   const pricePerPerson = body.pricePerPerson ?? 20000;
   if (maxSeats <= 0 || availableSeats < 0 || availableSeats > maxSeats) {
-    return c.json({ error: 'Invalid seats values' }, 400);
+    return c.json({ error: "Invalid seats values" }, 400);
   }
   if (pricePerPerson < 0) {
-    return c.json({ error: 'Invalid pricePerPerson value' }, 400);
+    return c.json({ error: "Invalid pricePerPerson value" }, 400);
   }
 
   const now = new Date();
@@ -115,7 +111,7 @@ encuentrosRoutes.post('/', async (c) => {
     availableSeats,
     pricePerPerson,
     imageKey: body.imageKey ?? null,
-    status: body.status ?? 'published',
+    status: body.status ?? "published",
     createdBy: userId,
     createdAt: now,
     updatedAt: now,
@@ -125,9 +121,9 @@ encuentrosRoutes.post('/', async (c) => {
   return c.json({ encuentro: newEncuentro }, 201);
 });
 
-encuentrosRoutes.patch('/:id', async (c) => {
+encuentrosRoutes.patch("/:id", async (c) => {
   const db = createDbClient(c.env.DB);
-  const id = c.req.param('id');
+  const id = c.req.param("id");
   const body = await c.req.json<{
     title?: string;
     description?: string | null;
@@ -138,12 +134,12 @@ encuentrosRoutes.patch('/:id', async (c) => {
     availableSeats?: number;
     pricePerPerson?: number;
     imageKey?: string | null;
-    status?: 'draft' | 'published' | 'cancelled';
+    status?: "draft" | "published" | "cancelled";
   }>();
 
   const existing = await db.select().from(encuentros).where(eq(encuentros.id, id)).get();
   if (!existing) {
-    return c.json({ error: 'Encuentro not found' }, 404);
+    return c.json({ error: "Encuentro not found" }, 404);
   }
 
   const patch: Record<string, unknown> = { updatedAt: new Date() };
@@ -153,7 +149,7 @@ encuentrosRoutes.patch('/:id', async (c) => {
   if (body.location !== undefined) patch.location = body.location;
   if (body.startsAt !== undefined) {
     const startsAt = new Date(body.startsAt);
-    if (Number.isNaN(startsAt.getTime())) return c.json({ error: 'Invalid startsAt date' }, 400);
+    if (Number.isNaN(startsAt.getTime())) return c.json({ error: "Invalid startsAt date" }, 400);
     patch.startsAt = startsAt;
   }
   if (body.endsAt !== undefined) {
@@ -161,7 +157,7 @@ encuentrosRoutes.patch('/:id', async (c) => {
       patch.endsAt = null;
     } else {
       const endsAt = new Date(body.endsAt);
-      if (Number.isNaN(endsAt.getTime())) return c.json({ error: 'Invalid endsAt date' }, 400);
+      if (Number.isNaN(endsAt.getTime())) return c.json({ error: "Invalid endsAt date" }, 400);
       patch.endsAt = endsAt;
     }
   }
@@ -169,7 +165,7 @@ encuentrosRoutes.patch('/:id', async (c) => {
   if (body.availableSeats !== undefined) patch.availableSeats = body.availableSeats;
   if (body.pricePerPerson !== undefined) {
     if (body.pricePerPerson < 0) {
-      return c.json({ error: 'Invalid pricePerPerson value' }, 400);
+      return c.json({ error: "Invalid pricePerPerson value" }, 400);
     }
     patch.pricePerPerson = body.pricePerPerson;
   }
@@ -182,23 +178,23 @@ encuentrosRoutes.patch('/:id', async (c) => {
 
   const updated = await db.select().from(encuentros).where(eq(encuentros.id, id)).get();
   if (!updated) {
-    return c.json({ error: 'Encuentro not found' }, 404);
+    return c.json({ error: "Encuentro not found" }, 404);
   }
 
   return c.json({ encuentro: withImageUrl(new URL(c.req.url).origin, updated) });
 });
 
-encuentrosRoutes.delete('/:id', async (c) => {
+encuentrosRoutes.delete("/:id", async (c) => {
   const db = createDbClient(c.env.DB);
-  const id = c.req.param('id');
+  const id = c.req.param("id");
 
   const existing = await db.select().from(encuentros).where(eq(encuentros.id, id)).get();
   if (!existing) {
-    return c.json({ error: 'Encuentro not found' }, 404);
+    return c.json({ error: "Encuentro not found" }, 404);
   }
 
   await db.delete(encuentros).where(eq(encuentros.id, id)).run();
-  return c.json({ message: 'Encuentro deleted' });
+  return c.json({ message: "Encuentro deleted" });
 });
 
 export default encuentrosRoutes;

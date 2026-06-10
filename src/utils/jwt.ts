@@ -1,7 +1,7 @@
-import { SignJWT, jwtVerify } from 'jose';
+import { SignJWT, jwtVerify } from "jose";
 
-const ACCESS_TOKEN_EXPIRY = '15m';
-const REFRESH_TOKEN_EXPIRY = '7d';
+const ACCESS_TOKEN_EXPIRY = "15m";
+const REFRESH_TOKEN_EXPIRY = "7d";
 
 export async function generateAccessToken(
   userId: string,
@@ -12,7 +12,7 @@ export async function generateAccessToken(
   const secretKey = new TextEncoder().encode(secret);
 
   return new SignJWT({ userId, email, role })
-    .setProtectedHeader({ alg: 'HS256' })
+    .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(ACCESS_TOKEN_EXPIRY)
     .sign(secretKey);
@@ -22,7 +22,7 @@ export async function generateRefreshToken(userId: string, secret: string): Prom
   const secretKey = new TextEncoder().encode(secret);
 
   return new SignJWT({ userId })
-    .setProtectedHeader({ alg: 'HS256' })
+    .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(REFRESH_TOKEN_EXPIRY)
     .sign(secretKey);

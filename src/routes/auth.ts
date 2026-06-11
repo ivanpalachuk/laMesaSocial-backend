@@ -1,16 +1,17 @@
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { createDbClient } from "../db";
-import { refreshTokens, users } from "../db/schema";
+import { passwordResetTokens, refreshTokens, users } from "../db/schema";
 import type { AppEnv } from "../middleware/auth";
+import { resolveEmailConfig, sendPasswordResetEmail, sendWelcomeEmail } from "../utils/email";
 import { generateAccessToken, generateId, generateRefreshToken, verifyToken } from "../utils/jwt";
 import { hashPassword, verifyPassword } from "../utils/password";
+import { serializeUserProfile } from "../utils/user-profile";
 
 const auth = new Hono<AppEnv>();
 
-function withoutPassword<T extends { password: string }>(user: T) {
-  const { password: _, ...safeUser } = user;
-  return safeUser;
+function profileResponse(origin: string, user: typeof users.$inferSelect) {
+  return { user: serializeUserProfile(origin, user) };
 }
 
 auth.post("/register", async (c) => {
@@ -38,13 +39,29 @@ auth.post("/register", async (c) => {
     name: body.name,
     role: "user" as const,
     isActive: true,
+    avatarImageKey: null,
+    avatarPreset: null,
+    bio: null,
+    gamerDna: "[]",
+    discoveryZone: null,
+    notifyEvents: true,
+    notifyGroupInvites: true,
     createdAt: now,
     updatedAt: now,
   };
 
   await db.insert(users).values(newUser).run();
 
-  return c.json({ user: withoutPassword(newUser) }, 201);
+  const welcomeEmailConfig = resolveEmailConfig(c.env);
+  if (welcomeEmailConfig) {
+    c.executionCtx.waitUntil(
+      sendWelcomeEmail(welcomeEmailConfig, newUser.email, newUser.name).catch((error) => {
+        console.error("Welcome email failed:", error);
+      }),
+    );
+  }
+
+  return c.json(profileResponse(new URL(c.req.url).origin, newUser), 201);
 });
 
 auth.post("/login", async (c) => {
@@ -79,10 +96,12 @@ auth.post("/login", async (c) => {
     })
     .run();
 
+  const origin = new URL(c.req.url).origin;
+
   return c.json({
     accessToken,
     refreshToken,
-    user: withoutPassword(user),
+    ...profileResponse(origin, user),
   });
 });
 
@@ -117,6 +136,92 @@ auth.post("/refresh", async (c) => {
   return c.json({ accessToken });
 });
 
+auth.post("/forgot-password", async (c) => {
+  const db = createDbClient(c.env.DB);
+  const body = await c.req.json<{ email: string }>();
+
+  if (!body.email?.trim()) {
+    return c.json({ error: "Missing email" }, 400);
+  }
+
+  const email = body.email.toLowerCase().trim();
+  const user = await db.select().from(users).where(eq(users.email, email)).get();
+  const emailConfig = resolveEmailConfig(c.env);
+
+  if (user && user.isActive && emailConfig) {
+    const token = generateId();
+    const now = new Date();
+
+    await db
+      .delete(passwordResetTokens)
+      .where(eq(passwordResetTokens.userId, user.id))
+      .run();
+
+    await db
+      .insert(passwordResetTokens)
+      .values({
+        id: generateId(),
+        userId: user.id,
+        token,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        createdAt: now,
+      })
+      .run();
+
+    c.executionCtx.waitUntil(
+      sendPasswordResetEmail(emailConfig, user.email, user.name, token).catch((error) => {
+        console.error("Password reset email failed:", error);
+      }),
+    );
+  }
+
+  return c.json({
+    message: "Si el correo existe en nuestra base, recibirás instrucciones para restablecer tu contraseña.",
+  });
+});
+
+auth.post("/reset-password", async (c) => {
+  const db = createDbClient(c.env.DB);
+  const body = await c.req.json<{ token: string; password: string }>();
+
+  if (!body.token?.trim() || !body.password) {
+    return c.json({ error: "Missing token or password" }, 400);
+  }
+
+  if (body.password.length < 6) {
+    return c.json({ error: "Password must have at least 6 characters" }, 400);
+  }
+
+  const resetToken = await db
+    .select()
+    .from(passwordResetTokens)
+    .where(eq(passwordResetTokens.token, body.token.trim()))
+    .get();
+
+  if (!resetToken || resetToken.expiresAt < new Date()) {
+    return c.json({ error: "Invalid or expired reset token" }, 400);
+  }
+
+  const user = await db.select().from(users).where(eq(users.id, resetToken.userId)).get();
+  if (!user || !user.isActive) {
+    return c.json({ error: "Invalid or expired reset token" }, 400);
+  }
+
+  const now = new Date();
+  const hashedPassword = await hashPassword(body.password);
+
+  await db
+    .update(users)
+    .set({ password: hashedPassword, updatedAt: now })
+    .where(eq(users.id, user.id))
+    .run();
+
+  await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id)).run();
+  await db.delete(refreshTokens).where(eq(refreshTokens.userId, user.id)).run();
+
+  return c.json({ message: "Password updated successfully" });
+});
+
 auth.post("/logout", async (c) => {
   const db = createDbClient(c.env.DB);
   const body = await c.req.json<{ refreshToken: string }>();
@@ -138,7 +243,7 @@ auth.get("/me", async (c) => {
     return c.json({ error: "User not found" }, 404);
   }
 
-  return c.json({ user: withoutPassword(user) });
+  return c.json(profileResponse(new URL(c.req.url).origin, user));
 });
 
 export default auth;

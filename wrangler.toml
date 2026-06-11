@@ -13,6 +13,13 @@ bucket_name = "lamesa-social-images"
 
 [vars]
 CORS_ORIGINS = "http://localhost:5174,http://localhost:5173,https://lamesasocial.com.ar,https://www.lamesasocial.com.ar,https://lamesasocial.app,https://www.lamesasocial.app"
+APP_URL = "https://lamesasocial.com.ar"
+RESEND_FROM_NAME = "La Mesa Social"
+RESEND_FROM_EMAIL = "bienvenida@lamesasocial.com.ar"
+PASSWORD_RESET_FROM_EMAIL = "seguridad@lamesasocial.com.ar"
+ORDERS_FROM_EMAIL = "pedidos@lamesasocial.com.ar"
+ORDERS_ADMIN_EMAIL = "hola@lamesasocial.com.ar"
+EMAIL_LOGO_URL = "https://lamesasocial.com.ar/711309238_18087093581102996_1979510018140210310_n.jpg"
 
 [env.production]
 name = "lamesasocial-backend-prod"
@@ -32,3 +39,10 @@ bucket_name = "lamesa-social-images-prod"
 
 [env.production.vars]
 CORS_ORIGINS = "http://localhost:5174,http://localhost:5173,https://lamesasocial.com.ar,https://www.lamesasocial.com.ar"
+APP_URL = "https://lamesasocial.com.ar"
+RESEND_FROM_NAME = "La Mesa Social"
+RESEND_FROM_EMAIL = "bienvenida@lamesasocial.com.ar"
+PASSWORD_RESET_FROM_EMAIL = "seguridad@lamesasocial.com.ar"
+ORDERS_FROM_EMAIL = "pedidos@lamesasocial.com.ar"
+ORDERS_ADMIN_EMAIL = "hola@lamesasocial.com.ar"
+EMAIL_LOGO_URL = "https://lamesasocial.com.ar/711309238_18087093581102996_1979510018140210310_n.jpg"

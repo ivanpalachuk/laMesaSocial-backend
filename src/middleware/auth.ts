@@ -7,6 +7,15 @@ export type AppEnv = {
     IMAGES: R2Bucket;
     JWT_SECRET: string;
     JWT_REFRESH_SECRET: string;
+    RESEND_API_KEY?: string;
+    RESEND_FROM_EMAIL?: string;
+    PASSWORD_RESET_FROM_EMAIL?: string;
+    RESEND_FROM_NAME?: string;
+    APP_URL?: string;
+    EMAIL_LOGO_URL?: string;
+    WELCOME_EMAIL_LOGO_URL?: string;
+    ORDERS_FROM_EMAIL?: string;
+    ORDERS_ADMIN_EMAIL?: string;
     CORS_ORIGINS?: string;
   };
   Variables: {

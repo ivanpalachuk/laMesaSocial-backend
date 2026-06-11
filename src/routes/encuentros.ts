@@ -3,6 +3,7 @@ import { and, desc, eq, gte } from "drizzle-orm";
 import { createDbClient } from "../db";
 import { encuentros } from "../db/schema";
 import { authMiddleware, type AppEnv } from "../middleware/auth";
+import { scheduleNewEventNotifications } from "../utils/event-notifications";
 import { generateId } from "../utils/jwt";
 
 const encuentrosRoutes = new Hono<AppEnv>();
@@ -118,6 +119,16 @@ encuentrosRoutes.post("/", async (c) => {
   };
 
   await db.insert(encuentros).values(newEncuentro).run();
+
+  if (newEncuentro.status === "published") {
+    scheduleNewEventNotifications(c, db, {
+      id: newEncuentro.id,
+      title: newEncuentro.title,
+      location: newEncuentro.location,
+      startsAt: newEncuentro.startsAt,
+    });
+  }
+
   return c.json({ encuentro: newEncuentro }, 201);
 });
 
@@ -179,6 +190,18 @@ encuentrosRoutes.patch("/:id", async (c) => {
   const updated = await db.select().from(encuentros).where(eq(encuentros.id, id)).get();
   if (!updated) {
     return c.json({ error: "Encuentro not found" }, 404);
+  }
+
+  const becamePublished =
+    updated.status === "published" && existing.status !== "published";
+
+  if (becamePublished) {
+    scheduleNewEventNotifications(c, db, {
+      id: updated.id,
+      title: updated.title,
+      location: updated.location,
+      startsAt: updated.startsAt,
+    });
   }
 
   return c.json({ encuentro: withImageUrl(new URL(c.req.url).origin, updated) });

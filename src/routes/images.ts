@@ -40,8 +40,12 @@ imagesRoutes.post("/upload", authMiddleware, async (c) => {
     return c.json({ error: "Unsupported image format. Use JPG, PNG or WEBP." }, 400);
   }
 
-  if ((file.size ?? 0) > 5 * 1024 * 1024) {
-    return c.json({ error: "Image exceeds 5MB limit." }, 400);
+  const maxBytes = folder === "avatars" ? 512 * 1024 : 5 * 1024 * 1024;
+  if ((file.size ?? 0) > maxBytes) {
+    return c.json(
+      { error: folder === "avatars" ? "Avatar exceeds 512KB limit." : "Image exceeds 5MB limit." },
+      400,
+    );
   }
 
   const key = `${folder}/${crypto.randomUUID()}.${extension}`;

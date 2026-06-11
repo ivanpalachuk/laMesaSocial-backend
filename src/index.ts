@@ -5,6 +5,8 @@ import usersRoutes from "./routes/users";
 import encuentrosRoutes from "./routes/encuentros";
 import imagesRoutes from "./routes/images";
 import productosRoutes from "./routes/productos";
+import meRoutes from "./routes/me";
+import pedidosRoutes from "./routes/pedidos";
 import { adminOnly, authMiddleware, type AppEnv } from "./middleware/auth";
 
 const app = new Hono<AppEnv>();
@@ -28,7 +30,7 @@ app.use("*", async (c, next) => {
 
       return allowedOrigins[0] || "http://localhost:5174";
     },
-    allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   });
@@ -53,6 +55,8 @@ app.route("/api/users", usersRoutes);
 app.route("/api/encuentros", encuentrosRoutes);
 app.route("/api/images", imagesRoutes);
 app.route("/api/productos", productosRoutes);
+app.route("/api/me", meRoutes);
+app.route("/api/pedidos", pedidosRoutes);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 

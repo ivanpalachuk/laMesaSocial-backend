@@ -1,0 +1,7 @@
+# Copy to .dev.vars for local development (never commit .dev.vars).
+JWT_SECRET=replace-with-a-long-random-string
+JWT_REFRESH_SECRET=replace-with-another-long-random-string
+RESEND_API_KEY=re_your_resend_api_key
+# Optional overrides (defaults are set in wrangler.toml)
+# PASSWORD_RESET_FROM_EMAIL=seguridad@lamesasocial.com.ar
+# EMAIL_LOGO_URL=https://lamesasocial.com.ar/711309238_18087093581102996_1979510018140210310_n.jpg

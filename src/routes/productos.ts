@@ -1,5 +1,5 @@
-import { Hono } from "hono";
-import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
+import { Hono, type Context } from "hono";
+import { and, asc, desc, eq, gt, lte, or, sql, type SQL } from "drizzle-orm";
 import { createDbClient } from "../db";
 import { productos } from "../db/schema";
 import { authMiddleware, type AppEnv } from "../middleware/auth";
@@ -18,14 +18,25 @@ type ProductoSortField =
   | "difficulty";
 type SortOrder = "asc" | "desc";
 
-const SORTABLE_FIELDS: Record<ProductoSortField, typeof productos.createdAt> = {
-  createdAt: productos.createdAt,
-  title: productos.title,
-  price: productos.price,
-  stock: productos.stock,
-  category: productos.category,
-  difficulty: productos.difficulty,
-};
+const DEFAULT_CATEGORIES = ["otros"];
+
+function getSortColumn(sortBy: ProductoSortField) {
+  switch (sortBy) {
+    case "title":
+      return productos.title;
+    case "price":
+      return productos.price;
+    case "stock":
+      return productos.stock;
+    case "category":
+      return sql`json_extract(${productos.categories}, '$[0]')`;
+    case "difficulty":
+      return productos.difficulty;
+    case "createdAt":
+    default:
+      return productos.createdAt;
+  }
+}
 
 function parsePositiveInt(value: string | undefined, fallback: number) {
   const parsed = Number(value);
@@ -35,7 +46,15 @@ function parsePositiveInt(value: string | undefined, fallback: number) {
 
 function parseSortBy(value: string | undefined, fallback: ProductoSortField): ProductoSortField {
   if (!value) return fallback;
-  if (value in SORTABLE_FIELDS) return value as ProductoSortField;
+  const allowed: ProductoSortField[] = [
+    "createdAt",
+    "title",
+    "price",
+    "stock",
+    "category",
+    "difficulty",
+  ];
+  if (allowed.includes(value as ProductoSortField)) return value as ProductoSortField;
   return fallback;
 }
 
@@ -50,25 +69,92 @@ function parseBooleanQuery(value: string | undefined): boolean | null {
   return null;
 }
 
-function buildImageUrl(origin: string, imageKey: string | null) {
-  if (!imageKey) return null;
-  const encoded = imageKey.split("/").map(encodeURIComponent).join("/");
-  return `${origin}/api/images/${encoded}`;
+function parseOptionalInt(value: string | undefined): number | null {
+  if (value === undefined || value.trim() === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.floor(parsed);
 }
 
-function withImageUrl(origin: string, row: typeof productos.$inferSelect) {
-  return { ...row, imageUrl: buildImageUrl(origin, row.imageKey) };
+function parseCategoriesQuery(c: Context<AppEnv>): string[] {
+  const repeated = c.req.queries("categories") ?? c.req.queries("category") ?? [];
+  const combined = c.req.query("categories") ?? c.req.query("category") ?? "";
+  const fromCsv = combined
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return Array.from(new Set([...repeated, ...fromCsv]));
 }
 
-// Public: list available products
-productosRoutes.get("/", async (c) => {
-  const db = createDbClient(c.env.DB);
-  const origin = new URL(c.req.url).origin;
-  const page = parsePositiveInt(c.req.query("page"), 1);
-  const pageSize = Math.min(parsePositiveInt(c.req.query("pageSize"), 12), 100);
-  const sortBy = parseSortBy(c.req.query("sortBy"), "createdAt");
-  const sortOrder = parseSortOrder(c.req.query("sortOrder"), "desc");
-  const whereClause = and(eq(productos.status, "available"), gt(productos.stock, 0));
+function buildCategoriesFilter(categories: string[]): SQL | undefined {
+  if (!categories.length) return undefined;
+  const clauses = categories.map(
+    (category) =>
+      sql`EXISTS (SELECT 1 FROM json_each(${productos.categories}) WHERE value = ${category})`,
+  );
+  return clauses.length === 1 ? clauses[0] : or(...clauses);
+}
+
+type ProductListFilters = {
+  q?: string;
+  categories?: string[];
+  status?: ProductoStatus;
+  enLudoteca?: boolean | null;
+  esFavorito?: boolean | null;
+  minPlayers?: number | null;
+  maxPlayers?: number | null;
+  maxPrice?: number | null;
+  availableOnly?: boolean;
+};
+
+function buildProductListWhere(filters: ProductListFilters): SQL | undefined {
+  const clauses: SQL[] = [];
+
+  if (filters.availableOnly) {
+    clauses.push(eq(productos.status, "available"));
+    clauses.push(gt(productos.stock, 0));
+  } else if (filters.status) {
+    clauses.push(eq(productos.status, filters.status));
+  }
+
+  if (filters.q) {
+    clauses.push(sql`lower(${productos.title}) like ${`%${filters.q.toLowerCase()}%`}`);
+  }
+
+  const categoryFilter = buildCategoriesFilter(filters.categories ?? []);
+  if (categoryFilter) clauses.push(categoryFilter);
+
+  if (filters.enLudoteca !== null && filters.enLudoteca !== undefined) {
+    clauses.push(eq(productos.enLudoteca, filters.enLudoteca));
+  }
+
+  if (filters.esFavorito !== null && filters.esFavorito !== undefined) {
+    clauses.push(eq(productos.esFavorito, filters.esFavorito));
+  }
+
+  if (filters.minPlayers !== null && filters.minPlayers !== undefined) {
+    clauses.push(sql`${productos.maxPlayers} >= ${filters.minPlayers}`);
+  }
+
+  if (filters.maxPlayers !== null && filters.maxPlayers !== undefined) {
+    clauses.push(sql`${productos.minPlayers} <= ${filters.maxPlayers}`);
+  }
+
+  if (filters.maxPrice !== null && filters.maxPrice !== undefined) {
+    clauses.push(lte(productos.price, filters.maxPrice));
+  }
+
+  if (!clauses.length) return undefined;
+  return and(...clauses);
+}
+
+async function queryProductList(
+  db: ReturnType<typeof createDbClient>,
+  origin: string,
+  filters: ProductListFilters,
+  pagination: { page: number; pageSize: number; sortBy: ProductoSortField; sortOrder: SortOrder },
+) {
+  const whereClause = buildProductListWhere(filters);
 
   const totalRow = await db
     .select({ count: sql<number>`count(*)` })
@@ -76,44 +162,138 @@ productosRoutes.get("/", async (c) => {
     .where(whereClause)
     .get();
   const total = Number(totalRow?.count ?? 0);
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const offset = (safePage - 1) * pageSize;
+  const totalPages = Math.max(1, Math.ceil(total / pagination.pageSize));
+  const safePage = Math.min(pagination.page, totalPages);
+  const offset = (safePage - 1) * pagination.pageSize;
 
   const rows = await db
     .select()
     .from(productos)
     .where(whereClause)
-    .orderBy(sortOrder === "asc" ? asc(SORTABLE_FIELDS[sortBy]) : desc(SORTABLE_FIELDS[sortBy]))
-    .limit(pageSize)
+    .orderBy(
+      pagination.sortOrder === "asc"
+        ? asc(getSortColumn(pagination.sortBy))
+        : desc(getSortColumn(pagination.sortBy)),
+    )
+    .limit(pagination.pageSize)
     .offset(offset)
     .all();
-  return c.json({
+
+  return {
     productos: rows.map((r) => withImageUrl(origin, r)),
     pagination: {
       page: safePage,
-      pageSize,
+      pageSize: pagination.pageSize,
       total,
       totalPages,
     },
     sorting: {
-      sortBy,
-      sortOrder,
+      sortBy: pagination.sortBy,
+      sortOrder: pagination.sortOrder,
     },
-  });
+  };
+}
+
+function parseListPagination(c: Context<AppEnv>, defaultPageSize: number) {
+  return {
+    page: parsePositiveInt(c.req.query("page"), 1),
+    pageSize: Math.min(parsePositiveInt(c.req.query("pageSize"), defaultPageSize), 100),
+    sortBy: parseSortBy(c.req.query("sortBy"), "createdAt"),
+    sortOrder: parseSortOrder(c.req.query("sortOrder"), "desc"),
+  };
+}
+
+function parseListFilters(c: Context<AppEnv>): ProductListFilters {
+  const q = (c.req.query("q") ?? "").trim();
+  const status = (c.req.query("status") ?? "").trim() as ProductoStatus;
+  return {
+    q: q || undefined,
+    categories: parseCategoriesQuery(c),
+    status: status || undefined,
+    enLudoteca: parseBooleanQuery(c.req.query("enLudoteca")),
+    esFavorito: parseBooleanQuery(c.req.query("esFavorito")),
+    minPlayers: parseOptionalInt(c.req.query("minPlayers")),
+    maxPlayers: parseOptionalInt(c.req.query("maxPlayers")),
+    maxPrice: parseOptionalInt(c.req.query("maxPrice")),
+  };
+}
+
+function parseCategories(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+      const categories = parsed.map((item) => item.trim()).filter(Boolean);
+      return categories.length > 0 ? categories : DEFAULT_CATEGORIES;
+    }
+  } catch {
+    /* ignore invalid JSON */
+  }
+  return DEFAULT_CATEGORIES;
+}
+
+function serializeCategories(categories: string[]): string {
+  const normalized = categories.map((item) => item.trim()).filter(Boolean);
+  return JSON.stringify(normalized.length > 0 ? normalized : DEFAULT_CATEGORIES);
+}
+
+function normalizeCategoriesInput(input: string | string[] | undefined): string[] {
+  if (Array.isArray(input)) {
+    const categories = input.map((item) => item.trim()).filter(Boolean);
+    return categories.length > 0 ? categories : DEFAULT_CATEGORIES;
+  }
+  if (typeof input === "string" && input.trim()) {
+    return [input.trim()];
+  }
+  return DEFAULT_CATEGORIES;
+}
+
+function buildImageUrl(origin: string, imageKey: string | null) {
+  if (!imageKey) return null;
+  const encoded = imageKey.split("/").map(encodeURIComponent).join("/");
+  return `${origin}/api/images/${encoded}`;
+}
+
+function withImageUrl(origin: string, row: typeof productos.$inferSelect) {
+  const { categories: rawCategories, ...rest } = row;
+  return {
+    ...rest,
+    categories: parseCategories(rawCategories),
+    imageUrl: buildImageUrl(origin, row.imageKey),
+  };
+}
+
+// Public: list available products
+productosRoutes.get("/", async (c) => {
+  const db = createDbClient(c.env.DB);
+  const origin = new URL(c.req.url).origin;
+  const pagination = parseListPagination(c, 12);
+  const filters = parseListFilters(c);
+
+  const result = await queryProductList(
+    db,
+    origin,
+    { ...filters, availableOnly: true },
+    pagination,
+  );
+
+  return c.json(result);
 });
 
 // Public: list products in ludoteca
 productosRoutes.get("/ludoteca", async (c) => {
   const db = createDbClient(c.env.DB);
   const origin = new URL(c.req.url).origin;
-  const rows = await db
-    .select()
-    .from(productos)
-    .where(eq(productos.enLudoteca, true))
-    .orderBy(desc(productos.createdAt))
-    .all();
-  return c.json({ productos: rows.map((r) => withImageUrl(origin, r)) });
+  const pagination = parseListPagination(c, 100);
+  const filters = parseListFilters(c);
+
+  const result = await queryProductList(
+    db,
+    origin,
+    { ...filters, enLudoteca: true },
+    pagination,
+  );
+
+  return c.json(result);
 });
 
 // Public: list favorite products
@@ -149,67 +329,11 @@ productosRoutes.use("*", authMiddleware);
 productosRoutes.get("/admin/all", async (c) => {
   const db = createDbClient(c.env.DB);
   const origin = new URL(c.req.url).origin;
-  const page = parsePositiveInt(c.req.query("page"), 1);
-  const pageSize = Math.min(parsePositiveInt(c.req.query("pageSize"), 20), 100);
-  const sortBy = parseSortBy(c.req.query("sortBy"), "createdAt");
-  const sortOrder = parseSortOrder(c.req.query("sortOrder"), "desc");
-  const q = (c.req.query("q") ?? "").trim().toLowerCase();
-  const category = c.req.query("category")?.trim() ?? "";
-  const status = c.req.query("status")?.trim() ?? "";
-  const enLudoteca = parseBooleanQuery(c.req.query("enLudoteca"));
-  const esFavorito = parseBooleanQuery(c.req.query("esFavorito"));
+  const pagination = parseListPagination(c, 20);
+  const filters = parseListFilters(c);
 
-  const filters: any[] = [];
-  if (q) {
-    filters.push(sql`lower(${productos.title}) like ${`%${q}%`}`);
-  }
-  if (category) {
-    filters.push(eq(productos.category, category));
-  }
-  if (status) {
-    filters.push(eq(productos.status, status as ProductoStatus));
-  }
-  if (enLudoteca !== null) {
-    filters.push(eq(productos.enLudoteca, enLudoteca));
-  }
-  if (esFavorito !== null) {
-    filters.push(eq(productos.esFavorito, esFavorito));
-  }
-
-  const whereClause = filters.length > 0 ? and(...filters) : undefined;
-
-  const totalRow = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(productos)
-    .where(whereClause)
-    .get();
-  const total = Number(totalRow?.count ?? 0);
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const offset = (safePage - 1) * pageSize;
-
-  const rows = await db
-    .select()
-    .from(productos)
-    .where(whereClause)
-    .orderBy(sortOrder === "asc" ? asc(SORTABLE_FIELDS[sortBy]) : desc(SORTABLE_FIELDS[sortBy]))
-    .limit(pageSize)
-    .offset(offset)
-    .all();
-
-  return c.json({
-    productos: rows.map((r) => withImageUrl(origin, r)),
-    pagination: {
-      page: safePage,
-      pageSize,
-      total,
-      totalPages,
-    },
-    sorting: {
-      sortBy,
-      sortOrder,
-    },
-  });
+  const result = await queryProductList(db, origin, filters, pagination);
+  return c.json(result);
 });
 
 // Create
@@ -219,7 +343,7 @@ productosRoutes.post("/", async (c) => {
   const body = await c.req.json<{
     title: string;
     description?: string;
-    category?: string;
+    categories?: string | string[];
     condition?: ProductoCondition;
     minPlayers?: number;
     maxPlayers?: number;
@@ -243,7 +367,7 @@ productosRoutes.post("/", async (c) => {
     id: generateId(),
     title: body.title,
     description: body.description ?? null,
-    category: body.category ?? "otros",
+    categories: serializeCategories(normalizeCategoriesInput(body.categories)),
     condition: (body.condition ?? "nuevo") as ProductoCondition,
     minPlayers: body.minPlayers ?? 2,
     maxPlayers: body.maxPlayers ?? 4,
@@ -255,6 +379,8 @@ productosRoutes.post("/", async (c) => {
     stock: body.stock ?? 1,
     imageKey: body.imageKey ?? null,
     status: (body.status ?? "available") as ProductoStatus,
+    enLudoteca: false,
+    esFavorito: false,
     createdBy: userId,
     createdAt: now,
     updatedAt: now,
@@ -276,7 +402,7 @@ productosRoutes.patch("/:id", async (c) => {
     Partial<{
       title: string;
       description: string | null;
-      category: string;
+      categories: string | string[];
       condition: ProductoCondition;
       minPlayers: number;
       maxPlayers: number;
@@ -296,7 +422,9 @@ productosRoutes.patch("/:id", async (c) => {
   const patch: Record<string, unknown> = { updatedAt: new Date() };
   if (body.title !== undefined) patch.title = body.title;
   if (body.description !== undefined) patch.description = body.description;
-  if (body.category !== undefined) patch.category = body.category;
+  if (body.categories !== undefined) {
+    patch.categories = serializeCategories(normalizeCategoriesInput(body.categories));
+  }
   if (body.condition !== undefined) patch.condition = body.condition;
   if (body.minPlayers !== undefined) patch.minPlayers = body.minPlayers;
   if (body.maxPlayers !== undefined) patch.maxPlayers = body.maxPlayers;
@@ -311,8 +439,6 @@ productosRoutes.patch("/:id", async (c) => {
   if (body.stock !== undefined) patch.stock = body.stock;
   if (body.imageKey !== undefined) patch.imageKey = body.imageKey;
   if (body.status !== undefined) patch.status = body.status;
-  if (body.enLudoteca !== undefined) patch.enLudoteca = body.enLudoteca;
-  if (body.esFavorito !== undefined) patch.esFavorito = body.esFavorito;
   if (body.enLudoteca !== undefined) patch.enLudoteca = body.enLudoteca;
   if (body.esFavorito !== undefined) patch.esFavorito = body.esFavorito;
 

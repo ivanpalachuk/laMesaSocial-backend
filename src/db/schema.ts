@@ -45,6 +45,7 @@ export const encuentros = sqliteTable("encuentros", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description"),
+  menuLudico: text("menu_ludico"),
   location: text("location").notNull(),
   startsAt: integer("starts_at", { mode: "timestamp" }).notNull(),
   endsAt: integer("ends_at", { mode: "timestamp" }),

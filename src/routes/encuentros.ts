@@ -69,6 +69,7 @@ encuentrosRoutes.post("/", async (c) => {
   const body = await c.req.json<{
     title: string;
     description?: string;
+    menuLudico?: string;
     location: string;
     startsAt: string;
     endsAt?: string;
@@ -105,6 +106,7 @@ encuentrosRoutes.post("/", async (c) => {
     id: generateId(),
     title: body.title,
     description: body.description ?? null,
+    menuLudico: body.menuLudico?.trim() || null,
     location: body.location,
     startsAt,
     endsAt,
@@ -138,6 +140,7 @@ encuentrosRoutes.patch("/:id", async (c) => {
   const body = await c.req.json<{
     title?: string;
     description?: string | null;
+    menuLudico?: string | null;
     location?: string;
     startsAt?: string;
     endsAt?: string | null;
@@ -157,6 +160,9 @@ encuentrosRoutes.patch("/:id", async (c) => {
 
   if (body.title !== undefined) patch.title = body.title;
   if (body.description !== undefined) patch.description = body.description;
+  if (body.menuLudico !== undefined) {
+    patch.menuLudico = body.menuLudico?.trim() || null;
+  }
   if (body.location !== undefined) patch.location = body.location;
   if (body.startsAt !== undefined) {
     const startsAt = new Date(body.startsAt);

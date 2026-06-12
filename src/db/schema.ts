@@ -79,6 +79,7 @@ export const productos = sqliteTable("productos", {
   price: integer("price").notNull().default(0),
   stock: integer("stock").notNull().default(1),
   imageKey: text("image_key"),
+  imageKeys: text("image_keys").notNull().default("[]"),
   status: text("status", { enum: ["available", "sold_out", "draft"] })
     .notNull()
     .default("available"),

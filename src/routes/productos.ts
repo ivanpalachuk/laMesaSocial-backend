@@ -253,12 +253,55 @@ function buildImageUrl(origin: string, imageKey: string | null) {
   return `${origin}/api/images/${encoded}`;
 }
 
+function parseImageKeys(raw: string | null | undefined, legacyKey: string | null): string[] {
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const keys = parsed
+          .filter((item): item is string => typeof item === "string")
+          .map((item) => item.trim())
+          .filter(Boolean);
+        if (keys.length > 0) return keys;
+      }
+    } catch {
+      /* ignore invalid JSON */
+    }
+  }
+  if (legacyKey?.trim()) return [legacyKey.trim()];
+  return [];
+}
+
+function serializeImageKeys(keys: string[]): string {
+  const normalized = keys.map((item) => item.trim()).filter(Boolean);
+  return JSON.stringify(normalized);
+}
+
+function normalizeImageKeysInput(
+  imageKeys: string[] | undefined,
+  imageKey: string | null | undefined,
+): string[] {
+  if (Array.isArray(imageKeys)) {
+    return imageKeys.map((item) => item.trim()).filter(Boolean);
+  }
+  if (imageKey === null) return [];
+  if (typeof imageKey === "string" && imageKey.trim()) return [imageKey.trim()];
+  return [];
+}
+
 function withImageUrl(origin: string, row: typeof productos.$inferSelect) {
-  const { categories: rawCategories, ...rest } = row;
+  const { categories: rawCategories, imageKeys: rawImageKeys, ...rest } = row;
+  const imageKeys = parseImageKeys(rawImageKeys, row.imageKey);
+  const imageUrls = imageKeys
+    .map((key) => buildImageUrl(origin, key))
+    .filter((url): url is string => Boolean(url));
   return {
     ...rest,
     categories: parseCategories(rawCategories),
-    imageUrl: buildImageUrl(origin, row.imageKey),
+    imageKeys,
+    imageUrls,
+    imageKey: imageKeys[0] ?? null,
+    imageUrl: imageUrls[0] ?? null,
   };
 }
 
@@ -354,6 +397,7 @@ productosRoutes.post("/", async (c) => {
     price: number;
     stock?: number;
     imageKey?: string | null;
+    imageKeys?: string[];
     status?: ProductoStatus;
   }>();
 
@@ -363,6 +407,7 @@ productosRoutes.post("/", async (c) => {
   if (body.price < 0) return c.json({ error: "Invalid price" }, 400);
 
   const now = new Date();
+  const normalizedImageKeys = normalizeImageKeysInput(body.imageKeys, body.imageKey);
   const row = {
     id: generateId(),
     title: body.title,
@@ -377,7 +422,8 @@ productosRoutes.post("/", async (c) => {
     publisher: body.publisher ?? null,
     price: body.price,
     stock: body.stock ?? 1,
-    imageKey: body.imageKey ?? null,
+    imageKey: normalizedImageKeys[0] ?? null,
+    imageKeys: serializeImageKeys(normalizedImageKeys),
     status: (body.status ?? "available") as ProductoStatus,
     enLudoteca: false,
     esFavorito: false,
@@ -413,6 +459,7 @@ productosRoutes.patch("/:id", async (c) => {
       price: number;
       stock: number;
       imageKey: string | null;
+      imageKeys: string[];
       status: ProductoStatus;
       enLudoteca: boolean;
       esFavorito: boolean;
@@ -437,7 +484,11 @@ productosRoutes.patch("/:id", async (c) => {
     patch.price = body.price;
   }
   if (body.stock !== undefined) patch.stock = body.stock;
-  if (body.imageKey !== undefined) patch.imageKey = body.imageKey;
+  if (body.imageKeys !== undefined || body.imageKey !== undefined) {
+    const normalizedImageKeys = normalizeImageKeysInput(body.imageKeys, body.imageKey);
+    patch.imageKeys = serializeImageKeys(normalizedImageKeys);
+    patch.imageKey = normalizedImageKeys[0] ?? null;
+  }
   if (body.status !== undefined) patch.status = body.status;
   if (body.enLudoteca !== undefined) patch.enLudoteca = body.enLudoteca;
   if (body.esFavorito !== undefined) patch.esFavorito = body.esFavorito;

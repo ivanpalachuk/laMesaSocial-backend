@@ -21,9 +21,31 @@ function buildImageUrl(origin: string, imageKey: string | null) {
   return `${origin}/api/images/${encoded}`;
 }
 
+function parseMenuLudicoProductoIds(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function serializeMenuLudicoProductoIds(ids: string[] | undefined): string {
+  if (!Array.isArray(ids)) return "[]";
+  const normalized = ids.map((item) => item.trim()).filter(Boolean);
+  return JSON.stringify(normalized);
+}
+
 function withImageUrl(origin: string, row: typeof encuentros.$inferSelect) {
+  const menuLudicoProductoIds = parseMenuLudicoProductoIds(row.menuLudicoProductoIds);
   return {
     ...row,
+    menuLudicoProductoIds,
     imageUrl: buildImageUrl(origin, row.imageKey),
   };
 }
@@ -70,6 +92,7 @@ encuentrosRoutes.post("/", async (c) => {
     title: string;
     description?: string;
     menuLudico?: string;
+    menuLudicoProductoIds?: string[];
     location: string;
     startsAt: string;
     endsAt?: string;
@@ -107,6 +130,7 @@ encuentrosRoutes.post("/", async (c) => {
     title: body.title,
     description: body.description ?? null,
     menuLudico: body.menuLudico?.trim() || null,
+    menuLudicoProductoIds: serializeMenuLudicoProductoIds(body.menuLudicoProductoIds),
     location: body.location,
     startsAt,
     endsAt,
@@ -131,7 +155,8 @@ encuentrosRoutes.post("/", async (c) => {
     });
   }
 
-  return c.json({ encuentro: newEncuentro }, 201);
+  const origin = new URL(c.req.url).origin;
+  return c.json({ encuentro: withImageUrl(origin, newEncuentro) }, 201);
 });
 
 encuentrosRoutes.patch("/:id", async (c) => {
@@ -141,6 +166,7 @@ encuentrosRoutes.patch("/:id", async (c) => {
     title?: string;
     description?: string | null;
     menuLudico?: string | null;
+    menuLudicoProductoIds?: string[];
     location?: string;
     startsAt?: string;
     endsAt?: string | null;
@@ -162,6 +188,9 @@ encuentrosRoutes.patch("/:id", async (c) => {
   if (body.description !== undefined) patch.description = body.description;
   if (body.menuLudico !== undefined) {
     patch.menuLudico = body.menuLudico?.trim() || null;
+  }
+  if (body.menuLudicoProductoIds !== undefined) {
+    patch.menuLudicoProductoIds = serializeMenuLudicoProductoIds(body.menuLudicoProductoIds);
   }
   if (body.location !== undefined) patch.location = body.location;
   if (body.startsAt !== undefined) {

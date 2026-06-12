@@ -15,7 +15,10 @@ type ProductoSortField =
   | "price"
   | "stock"
   | "category"
-  | "difficulty";
+  | "difficulty"
+  | "estimatedMinutes";
+type DurationBand = "short" | "medium" | "long";
+type DifficultyBand = "easy" | "medium" | "hard";
 type SortOrder = "asc" | "desc";
 
 const DEFAULT_CATEGORIES = ["otros"];
@@ -32,6 +35,8 @@ function getSortColumn(sortBy: ProductoSortField) {
       return sql`json_extract(${productos.categories}, '$[0]')`;
     case "difficulty":
       return productos.difficulty;
+    case "estimatedMinutes":
+      return productos.estimatedMinutes;
     case "createdAt":
     default:
       return productos.createdAt;
@@ -53,6 +58,7 @@ function parseSortBy(value: string | undefined, fallback: ProductoSortField): Pr
     "stock",
     "category",
     "difficulty",
+    "estimatedMinutes",
   ];
   if (allowed.includes(value as ProductoSortField)) return value as ProductoSortField;
   return fallback;
@@ -104,8 +110,20 @@ type ProductListFilters = {
   minPlayers?: number | null;
   maxPlayers?: number | null;
   maxPrice?: number | null;
+  durationBand?: DurationBand;
+  difficultyBand?: DifficultyBand;
   availableOnly?: boolean;
 };
+
+function parseDurationBand(value: string | undefined): DurationBand | undefined {
+  if (value === "short" || value === "medium" || value === "long") return value;
+  return undefined;
+}
+
+function parseDifficultyBand(value: string | undefined): DifficultyBand | undefined {
+  if (value === "easy" || value === "medium" || value === "hard") return value;
+  return undefined;
+}
 
 function buildProductListWhere(filters: ProductListFilters): SQL | undefined {
   const clauses: SQL[] = [];
@@ -142,6 +160,24 @@ function buildProductListWhere(filters: ProductListFilters): SQL | undefined {
 
   if (filters.maxPrice !== null && filters.maxPrice !== undefined) {
     clauses.push(lte(productos.price, filters.maxPrice));
+  }
+
+  if (filters.durationBand === "short") {
+    clauses.push(lte(productos.estimatedMinutes, 45));
+  } else if (filters.durationBand === "medium") {
+    clauses.push(gt(productos.estimatedMinutes, 45));
+    clauses.push(lte(productos.estimatedMinutes, 90));
+  } else if (filters.durationBand === "long") {
+    clauses.push(gt(productos.estimatedMinutes, 90));
+  }
+
+  if (filters.difficultyBand === "easy") {
+    clauses.push(lte(productos.difficulty, 2));
+  } else if (filters.difficultyBand === "medium") {
+    clauses.push(gt(productos.difficulty, 2));
+    clauses.push(lte(productos.difficulty, 3.5));
+  } else if (filters.difficultyBand === "hard") {
+    clauses.push(gt(productos.difficulty, 3.5));
   }
 
   if (!clauses.length) return undefined;
@@ -215,6 +251,8 @@ function parseListFilters(c: Context<AppEnv>): ProductListFilters {
     minPlayers: parseOptionalInt(c.req.query("minPlayers")),
     maxPlayers: parseOptionalInt(c.req.query("maxPlayers")),
     maxPrice: parseOptionalInt(c.req.query("maxPrice")),
+    durationBand: parseDurationBand(c.req.query("durationBand")),
+    difficultyBand: parseDifficultyBand(c.req.query("difficultyBand")),
   };
 }
 
@@ -326,7 +364,7 @@ productosRoutes.get("/", async (c) => {
 productosRoutes.get("/ludoteca", async (c) => {
   const db = createDbClient(c.env.DB);
   const origin = new URL(c.req.url).origin;
-  const pagination = parseListPagination(c, 100);
+  const pagination = parseListPagination(c, 12);
   const filters = parseListFilters(c);
 
   const result = await queryProductList(

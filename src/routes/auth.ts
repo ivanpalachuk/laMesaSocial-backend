@@ -10,8 +10,8 @@ import { serializeUserProfile } from "../utils/user-profile";
 
 const auth = new Hono<AppEnv>();
 
-function profileResponse(origin: string, user: typeof users.$inferSelect) {
-  return { user: serializeUserProfile(origin, user) };
+async function profileResponse(origin: string, user: typeof users.$inferSelect, images?: R2Bucket) {
+  return { user: await serializeUserProfile(origin, user, images) };
 }
 
 auth.post("/register", async (c) => {
@@ -62,7 +62,7 @@ auth.post("/register", async (c) => {
     );
   }
 
-  return c.json(profileResponse(new URL(c.req.url).origin, newUser), 201);
+  return c.json(await profileResponse(new URL(c.req.url).origin, newUser, c.env.IMAGES), 201);
 });
 
 auth.post("/login", async (c) => {
@@ -102,7 +102,7 @@ auth.post("/login", async (c) => {
   return c.json({
     accessToken,
     refreshToken,
-    ...profileResponse(origin, user),
+    ...(await profileResponse(origin, user, c.env.IMAGES)),
   });
 });
 
@@ -244,7 +244,7 @@ auth.get("/me", async (c) => {
     return c.json({ error: "User not found" }, 404);
   }
 
-  return c.json(profileResponse(new URL(c.req.url).origin, user));
+  return c.json(await profileResponse(new URL(c.req.url).origin, user, c.env.IMAGES));
 });
 
 export default auth;

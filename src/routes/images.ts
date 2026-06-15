@@ -48,7 +48,11 @@ imagesRoutes.post("/upload", authMiddleware, async (c) => {
     );
   }
 
-  const key = `${folder}/${crypto.randomUUID()}.${extension}`;
+  const userId = c.get("userId");
+  const key =
+    folder === "avatars"
+      ? `avatars/${userId}/${crypto.randomUUID()}.${extension}`
+      : `${folder}/${crypto.randomUUID()}.${extension}`;
   const contentType = file.type || "application/octet-stream";
 
   await c.env.IMAGES.put(key, await file.arrayBuffer(), {

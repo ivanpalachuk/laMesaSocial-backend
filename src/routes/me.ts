@@ -5,6 +5,8 @@ import { productos, userFavoritos, userWishlist, users } from "../db/schema";
 import { authMiddleware, type AppEnv } from "../middleware/auth";
 import {
   appendAvatarImageKey,
+  filterOwnedAvatarKeys,
+  isAvatarKeyOwnedByUser,
   isAvatarPresetId,
   parseAvatarImageKeys,
   serializeAvatarImageKeys,
@@ -192,7 +194,26 @@ meRoutes.get("/profile", async (c: MeContext) => {
   }
 
   const origin = new URL(c.req.url).origin;
-  return c.json({ profile: serializeUserProfile(origin, user) });
+  const profile = await serializeUserProfile(origin, user, c.env.IMAGES);
+  const sanitizedKeys = profile.avatarImageKeys;
+  const storedKeys = parseAvatarImageKeys(user.avatarImageKeys);
+  const storedSerialized = serializeAvatarImageKeys(storedKeys);
+  const sanitizedSerialized = serializeAvatarImageKeys(sanitizedKeys);
+  const activeKeyChanged = user.avatarImageKey !== profile.avatarImageKey;
+
+  if (sanitizedSerialized !== storedSerialized || activeKeyChanged) {
+    await db
+      .update(users)
+      .set({
+        avatarImageKeys: sanitizedSerialized,
+        avatarImageKey: profile.avatarImageKey,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .run();
+  }
+
+  return c.json({ profile });
 });
 
 meRoutes.patch("/profile", async (c: MeContext) => {
@@ -259,8 +280,9 @@ meRoutes.patch("/profile", async (c: MeContext) => {
     } else {
       if (existing.avatarImageKey) {
         nextAvatarImageKeys = appendAvatarImageKey(nextAvatarImageKeys, existing.avatarImageKey);
-        updates.avatarImageKeys = serializeAvatarImageKeys(nextAvatarImageKeys);
       }
+      nextAvatarImageKeys = await filterOwnedAvatarKeys(c.env.IMAGES, userId, nextAvatarImageKeys);
+      updates.avatarImageKeys = serializeAvatarImageKeys(nextAvatarImageKeys);
       updates.avatarPreset = body.avatarPreset;
       updates.avatarImageKey = null;
     }
@@ -275,7 +297,13 @@ meRoutes.patch("/profile", async (c: MeContext) => {
         return c.json({ error: "Invalid avatar key" }, 400);
       }
 
+      const ownsKey = await isAvatarKeyOwnedByUser(c.env.IMAGES, userId, key);
+      if (!ownsKey) {
+        return c.json({ error: "Invalid avatar key" }, 403);
+      }
+
       nextAvatarImageKeys = appendAvatarImageKey(nextAvatarImageKeys, key);
+      nextAvatarImageKeys = await filterOwnedAvatarKeys(c.env.IMAGES, userId, nextAvatarImageKeys);
       updates.avatarImageKeys = serializeAvatarImageKeys(nextAvatarImageKeys);
       updates.avatarImageKey = key;
       updates.avatarPreset = null;
@@ -290,7 +318,7 @@ meRoutes.patch("/profile", async (c: MeContext) => {
   }
 
   const origin = new URL(c.req.url).origin;
-  return c.json({ profile: serializeUserProfile(origin, user) });
+  return c.json({ profile: await serializeUserProfile(origin, user, c.env.IMAGES) });
 });
 
 export default meRoutes;

@@ -27,9 +27,49 @@ export function buildAvatarUrl(origin: string, avatarImageKey: string | null) {
   return `${origin}/api/images/${encoded}`;
 }
 
+export function parseAvatarImageKeys(raw: string | null | undefined): string[] {
+  if (!raw?.trim()) return [];
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === "string" && item.startsWith("avatars/"));
+  } catch {
+    return [];
+  }
+}
+
+export function serializeAvatarImageKeys(keys: string[]): string {
+  return JSON.stringify(keys);
+}
+
+export function appendAvatarImageKey(keys: string[], key: string, maxItems = 12): string[] {
+  const filtered = keys.filter((item) => item !== key);
+  return [key, ...filtered].slice(0, maxItems);
+}
+
+export function collectAvatarHistoryKeys(user: {
+  avatarImageKey: string | null;
+  avatarImageKeys: string | null;
+}): string[] {
+  const stored = parseAvatarImageKeys(user.avatarImageKeys);
+  if (user.avatarImageKey && !stored.includes(user.avatarImageKey)) {
+    return appendAvatarImageKey(stored, user.avatarImageKey);
+  }
+  return stored;
+}
+
 export function serializeUserProfile(origin: string, user: typeof users.$inferSelect) {
   const { password: _pw, gamerDna: rawGamerDna, ...rest } = user;
   void _pw;
+
+  const avatarImageKeys = collectAvatarHistoryKeys(user);
+  const avatarHistoryUrls = avatarImageKeys
+    .map((key) => ({
+      key,
+      url: buildAvatarUrl(origin, key),
+    }))
+    .filter((item): item is { key: string; url: string } => Boolean(item.url));
 
   return {
     id: rest.id,
@@ -38,6 +78,8 @@ export function serializeUserProfile(origin: string, user: typeof users.$inferSe
     role: rest.role,
     isActive: rest.isActive,
     avatarImageKey: rest.avatarImageKey,
+    avatarImageKeys,
+    avatarHistoryUrls,
     avatarPreset: rest.avatarPreset,
     bio: rest.bio,
     gamerDna: parseGamerDna(rawGamerDna),
@@ -46,6 +88,6 @@ export function serializeUserProfile(origin: string, user: typeof users.$inferSe
     notifyGroupInvites: rest.notifyGroupInvites,
     createdAt: rest.createdAt,
     updatedAt: rest.updatedAt,
-    avatarUrl: buildAvatarUrl(origin, user.avatarImageKey),
+    avatarUrl: rest.avatarPreset ? null : buildAvatarUrl(origin, user.avatarImageKey),
   };
 }

@@ -11,6 +11,7 @@ export const users = sqliteTable("users", {
     .default("user"),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   avatarImageKey: text("avatar_image_key"),
+  avatarImageKeys: text("avatar_image_keys").notNull().default("[]"),
   avatarPreset: text("avatar_preset"),
   bio: text("bio"),
   gamerDna: text("gamer_dna").notNull().default("[]"),

@@ -4,7 +4,10 @@ import { createDbClient } from "../db";
 import { productos, userFavoritos, userWishlist, users } from "../db/schema";
 import { authMiddleware, type AppEnv } from "../middleware/auth";
 import {
+  appendAvatarImageKey,
   isAvatarPresetId,
+  parseAvatarImageKeys,
+  serializeAvatarImageKeys,
   serializeGamerDna,
   serializeUserProfile,
 } from "../utils/user-profile";
@@ -210,6 +213,13 @@ meRoutes.patch("/profile", async (c: MeContext) => {
     updatedAt: new Date(),
   };
 
+  const existing = await db.select().from(users).where(eq(users.id, userId)).get();
+  if (!existing || !existing.isActive) {
+    return c.json({ error: "User not found" }, 404);
+  }
+
+  let nextAvatarImageKeys = parseAvatarImageKeys(existing.avatarImageKeys);
+
   if (body.name !== undefined) {
     const name = body.name.trim();
     if (!name) {
@@ -247,6 +257,10 @@ meRoutes.patch("/profile", async (c: MeContext) => {
     } else if (!isAvatarPresetId(body.avatarPreset)) {
       return c.json({ error: "Invalid avatar preset" }, 400);
     } else {
+      if (existing.avatarImageKey) {
+        nextAvatarImageKeys = appendAvatarImageKey(nextAvatarImageKeys, existing.avatarImageKey);
+        updates.avatarImageKeys = serializeAvatarImageKeys(nextAvatarImageKeys);
+      }
       updates.avatarPreset = body.avatarPreset;
       updates.avatarImageKey = null;
     }
@@ -260,14 +274,12 @@ meRoutes.patch("/profile", async (c: MeContext) => {
       if (!key.startsWith("avatars/")) {
         return c.json({ error: "Invalid avatar key" }, 400);
       }
+
+      nextAvatarImageKeys = appendAvatarImageKey(nextAvatarImageKeys, key);
+      updates.avatarImageKeys = serializeAvatarImageKeys(nextAvatarImageKeys);
       updates.avatarImageKey = key;
       updates.avatarPreset = null;
     }
-  }
-
-  const existing = await db.select().from(users).where(eq(users.id, userId)).get();
-  if (!existing || !existing.isActive) {
-    return c.json({ error: "User not found" }, 404);
   }
 
   await db.update(users).set(updates).where(eq(users.id, userId)).run();

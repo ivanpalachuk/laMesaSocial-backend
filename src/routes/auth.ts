@@ -40,6 +40,7 @@ auth.post("/register", async (c) => {
     role: "user" as const,
     isActive: true,
     avatarImageKey: null,
+    avatarImageKeys: "[]",
     avatarPreset: null,
     bio: null,
     gamerDna: "[]",

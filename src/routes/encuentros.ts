@@ -41,11 +41,58 @@ function serializeMenuLudicoProductoIds(ids: string[] | undefined): string {
   return JSON.stringify(normalized);
 }
 
+type MenuPrecioItem = {
+  id: string;
+  name: string;
+  price: number;
+  category?: string;
+};
+
+function parseMenuPrecios(raw: string | null | undefined): MenuPrecioItem[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (item): item is Record<string, unknown> =>
+          typeof item === "object" && item !== null,
+      )
+      .map((item) => ({
+        id: typeof item.id === "string" ? item.id.trim() : "",
+        name: typeof item.name === "string" ? item.name.trim() : "",
+        price: typeof item.price === "number" ? item.price : Number(item.price),
+        category:
+          typeof item.category === "string" && item.category.trim()
+            ? item.category.trim()
+            : undefined,
+      }))
+      .filter((item) => item.id && item.name && Number.isFinite(item.price) && item.price >= 0);
+  } catch {
+    return [];
+  }
+}
+
+function serializeMenuPrecios(items: MenuPrecioItem[] | undefined): string {
+  if (!Array.isArray(items)) return "[]";
+  const normalized = items
+    .map((item) => ({
+      id: item.id.trim(),
+      name: item.name.trim(),
+      price: item.price,
+      ...(item.category?.trim() ? { category: item.category.trim() } : {}),
+    }))
+    .filter((item) => item.id && item.name && Number.isFinite(item.price) && item.price >= 0);
+  return JSON.stringify(normalized);
+}
+
 function withImageUrl(origin: string, row: typeof encuentros.$inferSelect) {
   const menuLudicoProductoIds = parseMenuLudicoProductoIds(row.menuLudicoProductoIds);
+  const menuPrecios = parseMenuPrecios(row.menuPrecios);
   return {
     ...row,
     menuLudicoProductoIds,
+    menuPrecios,
     imageUrl: buildImageUrl(origin, row.imageKey),
   };
 }
@@ -93,6 +140,7 @@ encuentrosRoutes.post("/", async (c) => {
     description?: string;
     menuLudico?: string;
     menuLudicoProductoIds?: string[];
+    menuPrecios?: MenuPrecioItem[];
     location: string;
     startsAt: string;
     endsAt?: string;
@@ -131,6 +179,7 @@ encuentrosRoutes.post("/", async (c) => {
     description: body.description ?? null,
     menuLudico: body.menuLudico?.trim() || null,
     menuLudicoProductoIds: serializeMenuLudicoProductoIds(body.menuLudicoProductoIds),
+    menuPrecios: serializeMenuPrecios(body.menuPrecios),
     location: body.location,
     startsAt,
     endsAt,
@@ -167,6 +216,7 @@ encuentrosRoutes.patch("/:id", async (c) => {
     description?: string | null;
     menuLudico?: string | null;
     menuLudicoProductoIds?: string[];
+    menuPrecios?: MenuPrecioItem[];
     location?: string;
     startsAt?: string;
     endsAt?: string | null;
@@ -191,6 +241,9 @@ encuentrosRoutes.patch("/:id", async (c) => {
   }
   if (body.menuLudicoProductoIds !== undefined) {
     patch.menuLudicoProductoIds = serializeMenuLudicoProductoIds(body.menuLudicoProductoIds);
+  }
+  if (body.menuPrecios !== undefined) {
+    patch.menuPrecios = serializeMenuPrecios(body.menuPrecios);
   }
   if (body.location !== undefined) patch.location = body.location;
   if (body.startsAt !== undefined) {

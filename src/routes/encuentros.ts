@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { createDbClient } from "../db";
 import { encuentros } from "../db/schema";
 import { authMiddleware, type AppEnv } from "../middleware/auth";
@@ -86,13 +86,39 @@ function serializeMenuPrecios(items: MenuPrecioItem[] | undefined): string {
   return JSON.stringify(normalized);
 }
 
+function parseGalleryImageKeys(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function serializeGalleryImageKeys(keys: string[] | undefined): string {
+  if (!Array.isArray(keys)) return "[]";
+  const normalized = keys.map((item) => item.trim()).filter(Boolean);
+  return JSON.stringify(normalized);
+}
+
 function withImageUrl(origin: string, row: typeof encuentros.$inferSelect) {
   const menuLudicoProductoIds = parseMenuLudicoProductoIds(row.menuLudicoProductoIds);
   const menuPrecios = parseMenuPrecios(row.menuPrecios);
+  const galleryImageKeys = parseGalleryImageKeys(row.galleryImageKeys);
+  const galleryImageUrls = galleryImageKeys
+    .map((key) => buildImageUrl(origin, key))
+    .filter((url): url is string => Boolean(url));
   return {
     ...row,
     menuLudicoProductoIds,
     menuPrecios,
+    galleryImageKeys,
+    galleryImageUrls,
     imageUrl: buildImageUrl(origin, row.imageKey),
   };
 }
@@ -103,7 +129,8 @@ encuentrosRoutes.get("/", async (c) => {
   const rows = await db
     .select()
     .from(encuentros)
-    .where(and(eq(encuentros.status, "published"), gte(encuentros.startsAt, new Date())))
+    .where(eq(encuentros.status, "published"))
+    .orderBy(desc(encuentros.startsAt))
     .all();
 
   return c.json({ encuentros: rows.map((row) => withImageUrl(origin, row)) });
@@ -148,6 +175,7 @@ encuentrosRoutes.post("/", async (c) => {
     availableSeats?: number;
     pricePerPerson?: number;
     imageKey?: string;
+    galleryImageKeys?: string[];
     status?: "draft" | "published" | "cancelled";
   }>();
 
@@ -187,6 +215,7 @@ encuentrosRoutes.post("/", async (c) => {
     availableSeats,
     pricePerPerson,
     imageKey: body.imageKey ?? null,
+    galleryImageKeys: serializeGalleryImageKeys(body.galleryImageKeys),
     status: body.status ?? "published",
     createdBy: userId,
     createdAt: now,
@@ -224,6 +253,7 @@ encuentrosRoutes.patch("/:id", async (c) => {
     availableSeats?: number;
     pricePerPerson?: number;
     imageKey?: string | null;
+    galleryImageKeys?: string[];
     status?: "draft" | "published" | "cancelled";
   }>();
 
@@ -270,6 +300,9 @@ encuentrosRoutes.patch("/:id", async (c) => {
   }
   if (body.imageKey !== undefined) {
     patch.imageKey = body.imageKey;
+  }
+  if (body.galleryImageKeys !== undefined) {
+    patch.galleryImageKeys = serializeGalleryImageKeys(body.galleryImageKeys);
   }
   if (body.status !== undefined) patch.status = body.status;
 

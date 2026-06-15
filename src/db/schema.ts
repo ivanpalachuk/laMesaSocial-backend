@@ -55,6 +55,7 @@ export const encuentros = sqliteTable("encuentros", {
   availableSeats: integer("available_seats").notNull().default(20),
   pricePerPerson: integer("price_per_person").notNull().default(20000),
   imageKey: text("image_key"),
+  galleryImageKeys: text("gallery_image_keys").notNull().default("[]"),
   status: text("status", { enum: ["draft", "published", "cancelled"] })
     .notNull()
     .default("published"),

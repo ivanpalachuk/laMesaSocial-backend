@@ -1,13 +1,41 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { authMiddleware, type AppEnv } from "../middleware/auth";
 
 const imagesRoutes = new Hono<AppEnv>();
+const RAW_IMAGE_PREFIX = "/api/images/raw/";
 
 const IMAGE_MIME_EXT: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
 };
+
+const ALLOWED_FITS = ["scale-down", "contain", "cover", "crop", "pad"] as const;
+type ImageFit = (typeof ALLOWED_FITS)[number];
+
+function parsePositiveInt(value: string | null, max: number) {
+  if (!value) return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) return null;
+  return Math.min(parsed, max);
+}
+
+function parseQuality(value: string | null) {
+  if (!value) return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) return null;
+  return Math.min(parsed, 100);
+}
+
+function getImageKeyFromUrl(requestUrl: string, prefix: string) {
+  const urlPath = new URL(requestUrl).pathname;
+  const rawKey = urlPath.startsWith(prefix) ? urlPath.slice(prefix.length) : "";
+  try {
+    return decodeURIComponent(rawKey);
+  } catch {
+    return "";
+  }
+}
 
 function buildPublicImageUrl(origin: string, key: string) {
   const encoded = key
@@ -74,12 +102,12 @@ imagesRoutes.post("/upload", authMiddleware, async (c) => {
   });
 });
 
-imagesRoutes.get("/*", async (c) => {
-  // c.req.param('*') is empty in Hono sub-routers; extract key from the raw URL path instead.
-  const urlPath = new URL(c.req.url).pathname;
-  const prefix = "/api/images/";
-  const rawKey = urlPath.startsWith(prefix) ? urlPath.slice(prefix.length) : (c.req.param("*") ?? "");
-  const key = decodeURIComponent(rawKey);
+function parseFit(value: string | null): ImageFit | undefined {
+  return ALLOWED_FITS.find((fit) => fit === value);
+}
+
+async function serveOriginalImage(c: Context<AppEnv>, prefix = RAW_IMAGE_PREFIX) {
+  const key = getImageKeyFromUrl(c.req.url, prefix);
 
   if (!key) {
     return c.json({ error: "Missing key" }, 400);
@@ -101,6 +129,62 @@ imagesRoutes.get("/*", async (c) => {
   return new Response(object.body, {
     headers,
   });
+}
+
+imagesRoutes.get("/raw/*", async (c) => {
+  return serveOriginalImage(c);
+});
+
+imagesRoutes.get("/*", async (c) => {
+  const key = getImageKeyFromUrl(c.req.url, "/api/images/");
+
+  if (!key) {
+    return c.json({ error: "Missing key" }, 400);
+  }
+
+  const url = new URL(c.req.url);
+  const width = parsePositiveInt(url.searchParams.get("w"), 2400);
+  const height = parsePositiveInt(url.searchParams.get("h"), 2400);
+  const quality = parseQuality(url.searchParams.get("q"));
+  const fit = parseFit(url.searchParams.get("fit"));
+  const wantsTransform = Boolean(width || height || quality || fit);
+
+  if (!wantsTransform) {
+    return serveOriginalImage(c, "/api/images/");
+  }
+
+  const object = await c.env.IMAGES.get(key);
+
+  if (!object) {
+    return c.json({ error: "Image not found" }, 404);
+  }
+
+  try {
+    const transform: ImageTransform = {
+      ...(width ? { width } : {}),
+      ...(height ? { height } : {}),
+      ...(fit ? { fit } : {}),
+    };
+    const transformed = await c.env.IMAGE_TRANSFORMER
+      .input(object.body)
+      .transform(transform)
+      .output({
+        format: "image/webp",
+        ...(quality ? { quality } : {}),
+      });
+    const response = transformed.response();
+    const headers = new Headers(response.headers);
+    if (!headers.has("cache-control")) {
+      headers.set("cache-control", "public, max-age=31536000, immutable");
+    }
+
+    return new Response(response.body, {
+      status: response.status,
+      headers,
+    });
+  } catch {
+    return c.json({ error: "Image transform failed" }, 400);
+  }
 });
 
 export default imagesRoutes;

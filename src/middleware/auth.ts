@@ -5,6 +5,7 @@ export type AppEnv = {
   Bindings: {
     DB: D1Database;
     IMAGES: R2Bucket;
+    IMAGE_TRANSFORMER: ImagesBinding;
     JWT_SECRET: string;
     JWT_REFRESH_SECRET: string;
     RESEND_API_KEY?: string;

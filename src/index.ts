@@ -7,6 +7,7 @@ import imagesRoutes from "./routes/images";
 import productosRoutes from "./routes/productos";
 import meRoutes from "./routes/me";
 import pedidosRoutes from "./routes/pedidos";
+import adminStatsRoutes from "./routes/admin-stats";
 import { adminOnly, authMiddleware, type AppEnv } from "./middleware/auth";
 
 const app = new Hono<AppEnv>();
@@ -57,6 +58,8 @@ app.route("/api/images", imagesRoutes);
 app.route("/api/productos", productosRoutes);
 app.route("/api/me", meRoutes);
 app.route("/api/pedidos", pedidosRoutes);
+app.use("/api/admin/stats*", authMiddleware, adminOnly);
+app.route("/api/admin/stats", adminStatsRoutes);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 

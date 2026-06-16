@@ -67,6 +67,25 @@ export const encuentros = sqliteTable("encuentros", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
 
+export const encuentroComments = sqliteTable("encuentro_comments", {
+  id: text("id").primaryKey(),
+  encuentroId: text("encuentro_id")
+    .notNull()
+    .references(() => encuentros.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  status: text("status", { enum: ["pending", "approved", "rejected"] })
+    .notNull()
+    .default("pending"),
+  moderationNote: text("moderation_note"),
+  moderatedBy: text("moderated_by").references(() => users.id, { onDelete: "set null" }),
+  moderatedAt: integer("moderated_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});
+
 export const productos = sqliteTable("productos", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
@@ -166,6 +185,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   refreshTokens: many(refreshTokens),
   passwordResetTokens: many(passwordResetTokens),
   encuentros: many(encuentros),
+  encuentroComments: many(encuentroComments),
   favoritos: many(userFavoritos),
   wishlist: many(userWishlist),
   pedidos: many(pedidos),
@@ -185,9 +205,25 @@ export const refreshTokensRelations = relations(refreshTokens, ({ one }) => ({
   }),
 }));
 
-export const encuentrosRelations = relations(encuentros, ({ one }) => ({
+export const encuentrosRelations = relations(encuentros, ({ one, many }) => ({
   creator: one(users, {
     fields: [encuentros.createdBy],
+    references: [users.id],
+  }),
+  comments: many(encuentroComments),
+}));
+
+export const encuentroCommentsRelations = relations(encuentroComments, ({ one }) => ({
+  encuentro: one(encuentros, {
+    fields: [encuentroComments.encuentroId],
+    references: [encuentros.id],
+  }),
+  user: one(users, {
+    fields: [encuentroComments.userId],
+    references: [users.id],
+  }),
+  moderator: one(users, {
+    fields: [encuentroComments.moderatedBy],
     references: [users.id],
   }),
 }));

@@ -1,12 +1,15 @@
 import { Hono } from "hono";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { createDbClient } from "../db";
-import { encuentros } from "../db/schema";
-import { authMiddleware, type AppEnv } from "../middleware/auth";
+import { encuentroComments, encuentros, users } from "../db/schema";
+import { adminOnly, authMiddleware, type AppEnv } from "../middleware/auth";
 import { scheduleNewEventNotifications } from "../utils/event-notifications";
 import { generateId } from "../utils/jwt";
+import { buildAvatarUrl } from "../utils/user-profile";
 
 const encuentrosRoutes = new Hono<AppEnv>();
+
+const COMMENT_MAX_LENGTH = 600;
 
 function buildImageUrl(origin: string, imageKey: string | null) {
   if (!imageKey) {
@@ -123,6 +126,46 @@ function withImageUrl(origin: string, row: typeof encuentros.$inferSelect) {
   };
 }
 
+function normalizeCommentContent(value: string | undefined) {
+  return (value ?? "").trim().replace(/\s+/g, " ");
+}
+
+function toPublicComment(
+  origin: string,
+  row: {
+    id: string;
+    encuentroId: string;
+    userId: string;
+    content: string;
+    status: "pending" | "approved" | "rejected";
+    moderationNote: string | null;
+    moderatedBy: string | null;
+    moderatedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+    authorName: string;
+    authorAvatarKey: string | null;
+  },
+) {
+  return {
+    id: row.id,
+    encuentroId: row.encuentroId,
+    userId: row.userId,
+    content: row.content,
+    status: row.status,
+    moderationNote: row.moderationNote,
+    moderatedBy: row.moderatedBy,
+    moderatedAt: row.moderatedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    author: {
+      id: row.userId,
+      name: row.authorName,
+      avatarUrl: buildAvatarUrl(origin, row.authorAvatarKey),
+    },
+  };
+}
+
 encuentrosRoutes.get("/", async (c) => {
   const db = createDbClient(c.env.DB);
   const origin = new URL(c.req.url).origin;
@@ -134,6 +177,41 @@ encuentrosRoutes.get("/", async (c) => {
     .all();
 
   return c.json({ encuentros: rows.map((row) => withImageUrl(origin, row)) });
+});
+
+encuentrosRoutes.get("/comments/pending", authMiddleware, adminOnly, async (c) => {
+  const db = createDbClient(c.env.DB);
+  const origin = new URL(c.req.url).origin;
+
+  const rows = await db
+    .select({
+      id: encuentroComments.id,
+      encuentroId: encuentroComments.encuentroId,
+      userId: encuentroComments.userId,
+      content: encuentroComments.content,
+      status: encuentroComments.status,
+      moderationNote: encuentroComments.moderationNote,
+      moderatedBy: encuentroComments.moderatedBy,
+      moderatedAt: encuentroComments.moderatedAt,
+      createdAt: encuentroComments.createdAt,
+      updatedAt: encuentroComments.updatedAt,
+      authorName: users.name,
+      authorAvatarKey: users.avatarImageKey,
+      encuentroTitle: encuentros.title,
+    })
+    .from(encuentroComments)
+    .innerJoin(users, eq(users.id, encuentroComments.userId))
+    .innerJoin(encuentros, eq(encuentros.id, encuentroComments.encuentroId))
+    .where(eq(encuentroComments.status, "pending"))
+    .orderBy(desc(encuentroComments.createdAt))
+    .all();
+
+  return c.json({
+    comments: rows.map((row) => ({
+      ...toPublicComment(origin, row),
+      encuentroTitle: row.encuentroTitle,
+    })),
+  });
 });
 
 encuentrosRoutes.get("/admin/all", authMiddleware, async (c) => {
@@ -157,7 +235,190 @@ encuentrosRoutes.get("/:id", async (c) => {
   return c.json({ encuentro: withImageUrl(origin, encuentro) });
 });
 
+encuentrosRoutes.get("/:id/comments", async (c) => {
+  const db = createDbClient(c.env.DB);
+  const origin = new URL(c.req.url).origin;
+  const encuentroId = c.req.param("id");
+
+  const encuentro = await db.select({ id: encuentros.id }).from(encuentros).where(eq(encuentros.id, encuentroId)).get();
+  if (!encuentro) {
+    return c.json({ error: "Encuentro not found" }, 404);
+  }
+
+  const rows = await db
+    .select({
+      id: encuentroComments.id,
+      encuentroId: encuentroComments.encuentroId,
+      userId: encuentroComments.userId,
+      content: encuentroComments.content,
+      status: encuentroComments.status,
+      moderationNote: encuentroComments.moderationNote,
+      moderatedBy: encuentroComments.moderatedBy,
+      moderatedAt: encuentroComments.moderatedAt,
+      createdAt: encuentroComments.createdAt,
+      updatedAt: encuentroComments.updatedAt,
+      authorName: users.name,
+      authorAvatarKey: users.avatarImageKey,
+    })
+    .from(encuentroComments)
+    .innerJoin(users, eq(users.id, encuentroComments.userId))
+    .where(and(eq(encuentroComments.encuentroId, encuentroId), eq(encuentroComments.status, "approved")))
+    .orderBy(desc(encuentroComments.createdAt))
+    .all();
+
+  return c.json({ comments: rows.map((row) => toPublicComment(origin, row)) });
+});
+
 encuentrosRoutes.use("*", authMiddleware);
+
+encuentrosRoutes.get("/:id/comments/mine", async (c) => {
+  const db = createDbClient(c.env.DB);
+  const origin = new URL(c.req.url).origin;
+  const encuentroId = c.req.param("id");
+  const userId = c.get("userId");
+
+  const rows = await db
+    .select({
+      id: encuentroComments.id,
+      encuentroId: encuentroComments.encuentroId,
+      userId: encuentroComments.userId,
+      content: encuentroComments.content,
+      status: encuentroComments.status,
+      moderationNote: encuentroComments.moderationNote,
+      moderatedBy: encuentroComments.moderatedBy,
+      moderatedAt: encuentroComments.moderatedAt,
+      createdAt: encuentroComments.createdAt,
+      updatedAt: encuentroComments.updatedAt,
+      authorName: users.name,
+      authorAvatarKey: users.avatarImageKey,
+    })
+    .from(encuentroComments)
+    .innerJoin(users, eq(users.id, encuentroComments.userId))
+    .where(and(eq(encuentroComments.encuentroId, encuentroId), eq(encuentroComments.userId, userId)))
+    .orderBy(desc(encuentroComments.createdAt))
+    .all();
+
+  return c.json({ comments: rows.map((row) => toPublicComment(origin, row)) });
+});
+
+encuentrosRoutes.post("/:id/comments", async (c) => {
+  const db = createDbClient(c.env.DB);
+  const encuentroId = c.req.param("id");
+  const userId = c.get("userId");
+  const body = await c.req.json<{ content?: string }>();
+
+  const encuentro = await db.select({ id: encuentros.id }).from(encuentros).where(eq(encuentros.id, encuentroId)).get();
+  if (!encuentro) {
+    return c.json({ error: "Encuentro not found" }, 404);
+  }
+
+  const content = normalizeCommentContent(body.content);
+  if (!content) {
+    return c.json({ error: "Comment content is required" }, 400);
+  }
+  if (content.length > COMMENT_MAX_LENGTH) {
+    return c.json({ error: `Comment exceeds ${COMMENT_MAX_LENGTH} characters` }, 400);
+  }
+
+  const now = new Date();
+  const newComment = {
+    id: generateId(),
+    encuentroId,
+    userId,
+    content,
+    status: "pending" as const,
+    moderationNote: null,
+    moderatedBy: null,
+    moderatedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await db.insert(encuentroComments).values(newComment).run();
+
+  const author = await db
+    .select({ name: users.name, avatarImageKey: users.avatarImageKey })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
+
+  return c.json(
+    {
+      comment: toPublicComment(new URL(c.req.url).origin, {
+        ...newComment,
+        authorName: author?.name ?? "Usuario",
+        authorAvatarKey: author?.avatarImageKey ?? null,
+      }),
+    },
+    201,
+  );
+});
+
+encuentrosRoutes.patch("/comments/:commentId/moderate", adminOnly, async (c) => {
+  const db = createDbClient(c.env.DB);
+  const commentId = c.req.param("commentId");
+  const moderatorId = c.get("userId");
+  const body = await c.req.json<{ status?: "approved" | "rejected"; moderationNote?: string | null }>();
+
+  if (!commentId) {
+    return c.json({ error: "Comment id is required" }, 400);
+  }
+
+  if (!body.status || !["approved", "rejected"].includes(body.status)) {
+    return c.json({ error: "Invalid moderation status" }, 400);
+  }
+
+  const existing = await db
+    .select({ id: encuentroComments.id, status: encuentroComments.status })
+    .from(encuentroComments)
+    .where(eq(encuentroComments.id, commentId))
+    .get();
+
+  if (!existing) {
+    return c.json({ error: "Comment not found" }, 404);
+  }
+
+  const moderationNote = body.moderationNote?.trim() || null;
+  const now = new Date();
+
+  await db
+    .update(encuentroComments)
+    .set({
+      status: body.status,
+      moderationNote,
+      moderatedBy: moderatorId,
+      moderatedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(encuentroComments.id, commentId))
+    .run();
+
+  const updated = await db
+    .select({
+      id: encuentroComments.id,
+      encuentroId: encuentroComments.encuentroId,
+      userId: encuentroComments.userId,
+      content: encuentroComments.content,
+      status: encuentroComments.status,
+      moderationNote: encuentroComments.moderationNote,
+      moderatedBy: encuentroComments.moderatedBy,
+      moderatedAt: encuentroComments.moderatedAt,
+      createdAt: encuentroComments.createdAt,
+      updatedAt: encuentroComments.updatedAt,
+      authorName: users.name,
+      authorAvatarKey: users.avatarImageKey,
+    })
+    .from(encuentroComments)
+    .innerJoin(users, eq(users.id, encuentroComments.userId))
+    .where(eq(encuentroComments.id, commentId))
+    .get();
+
+  if (!updated) {
+    return c.json({ error: "Comment not found" }, 404);
+  }
+
+  return c.json({ comment: toPublicComment(new URL(c.req.url).origin, updated) });
+});
 
 encuentrosRoutes.post("/", async (c) => {
   const db = createDbClient(c.env.DB);

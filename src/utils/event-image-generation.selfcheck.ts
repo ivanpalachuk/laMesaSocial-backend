@@ -32,14 +32,25 @@ assert(
   "prompt should include brand colors",
 );
 assert(
-  buildEventImagePrompt(completeEvent).includes("no abstracta") &&
+  buildEventImagePrompt(completeEvent).includes("No es flyer") &&
     buildEventImagePrompt(completeEvent).includes("Azul | 2-4 jugadores"),
   "prompt should force concrete event interpretation and include selected games",
 );
 assert(
   buildEventImagePrompt(completeEvent).includes("Interpretar hora+descripcion") &&
-    buildEventImagePrompt(completeEvent).includes("badge central"),
-  "prompt should ask for a contextual La Mesa Social poster-like visual direction",
+    buildEventImagePrompt(completeEvent).includes("fotografia editorial realista"),
+  "prompt should ask for a contextual La Mesa Social editorial photo direction",
+);
+assert(
+  buildEventImagePrompt(completeEvent).includes("Prohibido generar texto") &&
+    !buildEventImagePrompt(completeEvent).includes("badge central") &&
+    !buildEventImagePrompt(completeEvent).includes("tipo ticket/info"),
+  "prompt should avoid poster artifacts that make the model invent text",
+);
+assert(
+  buildEventImagePrompt(completeEvent).includes("tablero desplegado o una caja de juego visible") &&
+    buildEventImagePrompt(completeEvent).includes("no debe parecer solo bar/cafe"),
+  "prompt should force visible board game context",
 );
 assert(
   buildEventImagePrompt({

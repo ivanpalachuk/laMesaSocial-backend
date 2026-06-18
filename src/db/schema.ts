@@ -116,6 +116,25 @@ export const productos = sqliteTable("productos", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
 
+export const encyclopediaArticles = sqliteTable("encyclopedia_articles", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  summary: text("summary").notNull(),
+  content: text("content").notNull(),
+  topic: text("topic").notNull().default("general"),
+  relatedProductoIds: text("related_producto_ids").notNull().default("[]"),
+  imageKey: text("image_key"),
+  imageKeys: text("image_keys").notNull().default("[]"),
+  status: text("status", { enum: ["draft", "published"] })
+    .notNull()
+    .default("draft"),
+  createdBy: text("created_by")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});
+
 export const userFavoritos = sqliteTable(
   "user_favoritos",
   {
@@ -189,6 +208,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   favoritos: many(userFavoritos),
   wishlist: many(userWishlist),
   pedidos: many(pedidos),
+  encyclopediaArticles: many(encyclopediaArticles),
 }));
 
 export const passwordResetTokensRelations = relations(passwordResetTokens, ({ one }) => ({
@@ -211,6 +231,13 @@ export const encuentrosRelations = relations(encuentros, ({ one, many }) => ({
     references: [users.id],
   }),
   comments: many(encuentroComments),
+}));
+
+export const encyclopediaArticlesRelations = relations(encyclopediaArticles, ({ one }) => ({
+  creator: one(users, {
+    fields: [encyclopediaArticles.createdBy],
+    references: [users.id],
+  }),
 }));
 
 export const encuentroCommentsRelations = relations(encuentroComments, ({ one }) => ({

@@ -5,6 +5,7 @@ import usersRoutes from "./routes/users";
 import encuentrosRoutes from "./routes/encuentros";
 import imagesRoutes from "./routes/images";
 import productosRoutes from "./routes/productos";
+import encyclopediaRoutes from "./routes/encyclopedia";
 import meRoutes from "./routes/me";
 import pedidosRoutes from "./routes/pedidos";
 import adminStatsRoutes from "./routes/admin-stats";
@@ -29,7 +30,7 @@ app.use("*", async (c, next) => {
         return origin;
       }
 
-      return allowedOrigins[0] || "http://localhost:5174";
+      return null;
     },
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
@@ -56,6 +57,7 @@ app.route("/api/users", usersRoutes);
 app.route("/api/encuentros", encuentrosRoutes);
 app.route("/api/images", imagesRoutes);
 app.route("/api/productos", productosRoutes);
+app.route("/api/encyclopedia", encyclopediaRoutes);
 app.route("/api/me", meRoutes);
 app.route("/api/pedidos", pedidosRoutes);
 app.use("/api/admin/stats*", authMiddleware, adminOnly);

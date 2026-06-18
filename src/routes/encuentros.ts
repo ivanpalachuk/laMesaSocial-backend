@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { createDbClient } from "../db";
-import { encuentroComments, encuentros, users } from "../db/schema";
+import { encuentroComments, encuentros, productos, users } from "../db/schema";
 import { adminOnly, authMiddleware, type AppEnv } from "../middleware/auth";
 import { scheduleNewEventNotifications } from "../utils/event-notifications";
 import { EventImageGenerationError, generateEventImagePreview } from "../utils/event-image-generation";
@@ -122,6 +122,58 @@ function serializeGalleryImageKeys(keys: string[] | undefined): string {
   if (!Array.isArray(keys)) return "[]";
   const normalized = keys.map((item) => item.trim()).filter(Boolean);
   return JSON.stringify(normalized);
+}
+
+function parseProductoCategories(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function buildMenuLudicoGameContext(
+  db: ReturnType<typeof createDbClient>,
+  productoIds: string[] | undefined,
+) {
+  const ids = [...new Set((productoIds ?? []).map((id) => id.trim()).filter(Boolean))];
+  if (ids.length === 0) return [];
+
+  const rows = await db
+    .select({
+      id: productos.id,
+      title: productos.title,
+      categories: productos.categories,
+      minPlayers: productos.minPlayers,
+      maxPlayers: productos.maxPlayers,
+      estimatedMinutes: productos.estimatedMinutes,
+      difficulty: productos.difficulty,
+    })
+    .from(productos)
+    .where(inArray(productos.id, ids))
+    .all();
+  const byId = new Map(rows.map((row) => [row.id, row]));
+
+  return ids
+    .map((id) => {
+      const game = byId.get(id);
+      if (!game) return null;
+      const categories = parseProductoCategories(game.categories).join(", ");
+      return [
+        game.title,
+        `${game.minPlayers}-${game.maxPlayers} jugadores`,
+        `${game.estimatedMinutes} min`,
+        `dificultad ${game.difficulty}`,
+        categories ? `categorias: ${categories}` : "",
+      ].filter(Boolean).join(" | ");
+    })
+    .filter((item): item is string => Boolean(item));
 }
 
 function withImageUrl(origin: string, row: typeof encuentros.$inferSelect) {
@@ -291,6 +343,7 @@ encuentrosRoutes.post("/generate-image", adminOnly, async (c) => {
     title?: string;
     description?: string | null;
     menuLudico?: string | null;
+    menuLudicoProductoIds?: string[];
     location?: string;
     startsAt?: string;
     endsAt?: string | null;
@@ -318,6 +371,9 @@ encuentrosRoutes.post("/generate-image", adminOnly, async (c) => {
     return c.json({ error: "Invalid seats or price values" }, 400);
   }
 
+  const db = createDbClient(c.env.DB);
+  const menuLudicoGames = await buildMenuLudicoGameContext(db, body.menuLudicoProductoIds);
+
   let image: { data: string; mimeType: string } | null;
   try {
     image = await generateEventImagePreview(
@@ -325,6 +381,7 @@ encuentrosRoutes.post("/generate-image", adminOnly, async (c) => {
         title: body.title,
         description: body.description,
         menuLudico: body.menuLudico,
+        menuLudicoGames,
         location: body.location,
         startsAt,
         endsAt,

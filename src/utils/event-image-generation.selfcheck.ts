@@ -27,29 +27,33 @@ assert(
   "missing description should skip image generation",
 );
 assert(
-  buildEventImagePrompt(completeEvent).includes("#5d4037") &&
-    buildEventImagePrompt(completeEvent).includes("#f57c00"),
-  "prompt should include brand colors",
+  buildEventImagePrompt(completeEvent).includes("colores calidos tierra") &&
+    buildEventImagePrompt(completeEvent).includes("verde petroleo"),
+  "prompt should include brand-adjacent color mood without hex text",
 );
 assert(
-  buildEventImagePrompt(completeEvent).includes("No es flyer") &&
-    buildEventImagePrompt(completeEvent).includes("Azul | 2-4 jugadores"),
-  "prompt should force concrete event interpretation and include selected games",
+  buildEventImagePrompt(completeEvent).includes("Fotografia documental") &&
+    buildEventImagePrompt(completeEvent).includes("tablero abstracto con piezas de colores") &&
+    !buildEventImagePrompt(completeEvent).includes("Azul") &&
+    !buildEventImagePrompt(completeEvent).includes("2-4 jugadores"),
+  "prompt should force photographic event interpretation and convert selected games into generic visual hints",
 );
 assert(
-  buildEventImagePrompt(completeEvent).includes("Interpretar hora+descripcion") &&
-    buildEventImagePrompt(completeEvent).includes("fotografia editorial realista"),
-  "prompt should ask for a contextual La Mesa Social editorial photo direction",
+  buildEventImagePrompt(completeEvent).includes("Usar el contexto solo para elegir clima") &&
+    buildEventImagePrompt(completeEvent).includes("primer plano de mesa con comida/bebida"),
+  "prompt should use event data as visual context instead of rendered copy",
 );
 assert(
-  buildEventImagePrompt(completeEvent).includes("Prohibido generar texto") &&
+  buildEventImagePrompt(completeEvent).includes("Cero texto visible") &&
     !buildEventImagePrompt(completeEvent).includes("badge central") &&
-    !buildEventImagePrompt(completeEvent).includes("tipo ticket/info"),
-  "prompt should avoid poster artifacts that make the model invent text",
+    !buildEventImagePrompt(completeEvent).includes("tipo ticket/info") &&
+    !buildEventImagePrompt(completeEvent).includes("Evento:") &&
+    !buildEventImagePrompt(completeEvent).includes("Precio"),
+  "prompt should avoid structured copy and poster artifacts that make the model invent text",
 );
 assert(
-  buildEventImagePrompt(completeEvent).includes("tablero desplegado o una caja de juego visible") &&
-    buildEventImagePrompt(completeEvent).includes("no debe parecer solo bar/cafe"),
+  buildEventImagePrompt(completeEvent).includes("tablero desplegado") &&
+    buildEventImagePrompt(completeEvent).includes("sin letras, palabras, numeros"),
   "prompt should force visible board game context",
 );
 assert(

@@ -42,6 +42,14 @@ Backend API for La Mesa Social running on Cloudflare Workers + D1.
 - `npm run db:migrate:local`
 - `npm run db:migrate:remote`
 
+## Event image generation
+
+Admins can request an AI image preview for an event after filling title, description, ludic menu, location, date, seats, and price. The backend calls Cloudflare Workers AI with FLUX.1 Schnell (`@cf/black-forest-labs/flux-1-schnell`) and returns a temporary base64 image. The image is stored in the `IMAGES` R2 bucket only if the admin chooses to save and use it.
+
+Workers AI is configured through the `AI` binding in `wrangler.toml`.
+
+If Workers AI fails, event creation and editing still work; only the preview generation action fails.
+
 ## API routes
 
 - `POST /api/auth/register`
@@ -57,6 +65,7 @@ Backend API for La Mesa Social running on Cloudflare Workers + D1.
 - `PATCH /api/users/:id` (admin)
 - `GET /api/encuentros`
 - `GET /api/encuentros/:id`
-- `POST /api/encuentros` (auth)
-- `PATCH /api/encuentros/:id` (auth)
-- `DELETE /api/encuentros/:id` (auth)
+- `GET /api/encuentros/admin/all` (admin)
+- `POST /api/encuentros` (admin)
+- `PATCH /api/encuentros/:id` (admin)
+- `DELETE /api/encuentros/:id` (admin)

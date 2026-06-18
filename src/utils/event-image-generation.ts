@@ -68,7 +68,7 @@ export function buildEventImagePrompt(event: EventImageInput) {
   const games = compact(event.menuLudicoGames?.filter((game) => game.trim()).slice(0, 4).join("; "), 360);
 
   const prompt = [
-    "Imagen horizontal 16:9 para evento real de juegos de mesa de La Mesa Social. Estetica afiche/flyer social, no abstracta ni stock photo.",
+    "Imagen horizontal 16:9 editorial y fotografica para evento real de juegos de mesa de La Mesa Social. No es flyer, no es poster, no es collage, no es stock photo.",
     `Evento: ${compact(event.title, 120)}.`,
     `Descripcion: ${compact(event.description, 260)}.`,
     `Propuesta ludica: ${compact(event.menuLudico, 220)}.`,
@@ -76,10 +76,10 @@ export function buildEventImagePrompt(event: EventImageInput) {
     `Lugar y horario: ${compact(event.location, 90)}; ${schedule}. Cupos ${event.maxSeats}. Precio ${event.pricePerPerson}.`,
     "Interpretar hora+descripcion: manana=luz natural suave; tarde/merienda=mesa luminosa, cafe/te, merienda simple; noche=luz calida de bar/cafe; finde=plan social distendido.",
     "Si es relajado, mostrar conversacion y juegos tranquilos; si es party, risas/grupos/cartas; si es estrategia, mesa concentrada con tableros organizados; si es accesible/fin de mes, calidez comunitaria sin lujo.",
-    "Direccion visual: afiche premium calido, naranja quemado+crema, textura vintage sutil, lineas decorativas, iconos simples, divisores y bloques graficos tipo ticket/info.",
-    "Incluir escena fotografica realista integrada: adultos jugando en mesa, bebidas, componentes de juegos, comunidad. Agregar badge central inspirado en La Mesa Social: mesa, lampara, piezas, club social.",
+    "Direccion visual: fotografia editorial realista, calida y cuidada; adultos jugando en mesa, bebidas, componentes de juegos, comunidad, profundidad de campo suave, encuadre limpio para card web.",
+    "Composicion: una escena real de mesa compartida con identidad La Mesa Social, sin elementos graficos superpuestos; dejar una zona con menos detalle para que la web pueda poner texto encima.",
     "Paleta: #5d4037 tierra, #f57c00 naranja, #fbf9f5 crema, #005049 teal; negro calido solo si corresponde noche.",
-    "Evitar texto legible importante: usar formas que sugieran titulares/info. Sin logos, marcas, nombres de juegos visibles, QR real, casino, apuestas, flyer infantil, dados gigantes.",
+    "Prohibido generar texto, letras, palabras, numeros, carteles, titulares, menus, QR, logos, marcas o nombres de juegos visibles. Sin casino, apuestas, flyer infantil ni dados gigantes.",
   ].join("\n");
   return prompt.length > MAX_PROMPT_LENGTH ? prompt.slice(0, MAX_PROMPT_LENGTH) : prompt;
 }

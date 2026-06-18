@@ -6,6 +6,7 @@ const completeEvent = {
   title: "Noche de juegos",
   description: "Una mesa abierta para jugar y conocer gente.",
   menuLudico: "Catan, Azul y party games.",
+  menuLudicoGames: ["Azul | 2-4 jugadores | 45 min | dificultad 2 | categorias: familiar, abstracto"],
   location: "Mar del Plata",
   startsAt: new Date("2026-07-20T22:00:00.000Z"),
   endsAt: null,
@@ -29,4 +30,23 @@ assert(
   buildEventImagePrompt(completeEvent).includes("#5d4037") &&
     buildEventImagePrompt(completeEvent).includes("#f57c00"),
   "prompt should include brand colors",
+);
+assert(
+  buildEventImagePrompt(completeEvent).includes("no abstracta") &&
+    buildEventImagePrompt(completeEvent).includes("Azul | 2-4 jugadores"),
+  "prompt should force concrete event interpretation and include selected games",
+);
+assert(
+  buildEventImagePrompt(completeEvent).includes("Interpretar hora+descripcion") &&
+    buildEventImagePrompt(completeEvent).includes("badge central"),
+  "prompt should ask for a contextual La Mesa Social poster-like visual direction",
+);
+assert(
+  buildEventImagePrompt({
+    ...completeEvent,
+    description: "descripcion larga ".repeat(200),
+    menuLudico: "propuesta larga ".repeat(200),
+    menuLudicoGames: Array.from({ length: 12 }, (_, index) => `Juego ${index + 1} | 2-6 jugadores | 60 min | categorias: party, familiar`),
+  }).length <= 2048,
+  "prompt should fit Workers AI 2048 character limit",
 );

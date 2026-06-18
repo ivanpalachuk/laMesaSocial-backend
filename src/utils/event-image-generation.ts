@@ -77,7 +77,8 @@ export function buildEventImagePrompt(event: EventImageInput) {
     "Interpretar hora+descripcion: manana=luz natural suave; tarde/merienda=mesa luminosa, cafe/te, merienda simple; noche=luz calida de bar/cafe; finde=plan social distendido.",
     "Si es relajado, mostrar conversacion y juegos tranquilos; si es party, risas/grupos/cartas; si es estrategia, mesa concentrada con tableros organizados; si es accesible/fin de mes, calidez comunitaria sin lujo.",
     "Direccion visual: fotografia editorial realista, calida y cuidada; adultos jugando en mesa, bebidas, componentes de juegos, comunidad, profundidad de campo suave, encuadre limpio para card web.",
-    "Composicion: una escena real de mesa compartida con identidad La Mesa Social, sin elementos graficos superpuestos; dejar una zona con menos detalle para que la web pueda poner texto encima.",
+    "Debe verse claramente que estan jugando: incluir siempre un tablero desplegado o una caja de juego visible como sujeto principal, mas cartas/fichas/piezas sobre la mesa, sin marcas ni texto legible.",
+    "Composicion: una escena real de mesa compartida con identidad La Mesa Social, sin elementos graficos superpuestos; no debe parecer solo bar/cafe. Dejar zona limpia para texto web encima.",
     "Paleta: #5d4037 tierra, #f57c00 naranja, #fbf9f5 crema, #005049 teal; negro calido solo si corresponde noche.",
     "Prohibido generar texto, letras, palabras, numeros, carteles, titulares, menus, QR, logos, marcas o nombres de juegos visibles. Sin casino, apuestas, flyer infantil ni dados gigantes.",
   ].join("\n");

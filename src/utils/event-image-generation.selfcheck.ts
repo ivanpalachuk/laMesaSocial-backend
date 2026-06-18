@@ -48,6 +48,11 @@ assert(
   "prompt should avoid poster artifacts that make the model invent text",
 );
 assert(
+  buildEventImagePrompt(completeEvent).includes("tablero desplegado o una caja de juego visible") &&
+    buildEventImagePrompt(completeEvent).includes("no debe parecer solo bar/cafe"),
+  "prompt should force visible board game context",
+);
+assert(
   buildEventImagePrompt({
     ...completeEvent,
     description: "descripcion larga ".repeat(200),

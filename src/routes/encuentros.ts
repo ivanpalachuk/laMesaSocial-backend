@@ -4,12 +4,27 @@ import { createDbClient } from "../db";
 import { encuentroComments, encuentros, users } from "../db/schema";
 import { adminOnly, authMiddleware, type AppEnv } from "../middleware/auth";
 import { scheduleNewEventNotifications } from "../utils/event-notifications";
+import { EventImageGenerationError, generateEventImagePreview } from "../utils/event-image-generation";
 import { generateId } from "../utils/jwt";
 import { buildAvatarUrl } from "../utils/user-profile";
 
 const encuentrosRoutes = new Hono<AppEnv>();
 
 const COMMENT_MAX_LENGTH = 600;
+
+function eventDateKey(date: Date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function isValidSameDayEventWindow(startsAt: Date, endsAt: Date | null) {
+  if (!endsAt) return true;
+  return endsAt.getTime() > startsAt.getTime() && eventDateKey(startsAt) === eventDateKey(endsAt);
+}
 
 function buildImageUrl(origin: string, imageKey: string | null) {
   if (!imageKey) {
@@ -214,7 +229,7 @@ encuentrosRoutes.get("/comments/pending", authMiddleware, adminOnly, async (c) =
   });
 });
 
-encuentrosRoutes.get("/admin/all", authMiddleware, async (c) => {
+encuentrosRoutes.get("/admin/all", authMiddleware, adminOnly, async (c) => {
   const db = createDbClient(c.env.DB);
   const origin = new URL(c.req.url).origin;
   const rows = await db.select().from(encuentros).orderBy(desc(encuentros.startsAt)).all();
@@ -270,6 +285,68 @@ encuentrosRoutes.get("/:id/comments", async (c) => {
 });
 
 encuentrosRoutes.use("*", authMiddleware);
+
+encuentrosRoutes.post("/generate-image", adminOnly, async (c) => {
+  const body = await c.req.json<{
+    title?: string;
+    description?: string | null;
+    menuLudico?: string | null;
+    location?: string;
+    startsAt?: string;
+    endsAt?: string | null;
+    maxSeats?: number;
+    pricePerPerson?: number;
+    status?: "draft" | "published" | "cancelled";
+  }>();
+
+  if (!body.title || !body.description || !body.menuLudico || !body.location || !body.startsAt) {
+    return c.json({ error: "Title, description, ludic menu, location and startsAt are required" }, 400);
+  }
+
+  const startsAt = new Date(body.startsAt);
+  const endsAt = body.endsAt ? new Date(body.endsAt) : null;
+  if (Number.isNaN(startsAt.getTime()) || (endsAt && Number.isNaN(endsAt.getTime()))) {
+    return c.json({ error: "Invalid date format" }, 400);
+  }
+  if (!isValidSameDayEventWindow(startsAt, endsAt)) {
+    return c.json({ error: "Event must start and end on the same day" }, 400);
+  }
+
+  const maxSeats = body.maxSeats ?? 20;
+  const pricePerPerson = body.pricePerPerson ?? 0;
+  if (maxSeats <= 0 || pricePerPerson < 0) {
+    return c.json({ error: "Invalid seats or price values" }, 400);
+  }
+
+  let image: { data: string; mimeType: string } | null;
+  try {
+    image = await generateEventImagePreview(
+      {
+        title: body.title,
+        description: body.description,
+        menuLudico: body.menuLudico,
+        location: body.location,
+        startsAt,
+        endsAt,
+        maxSeats,
+        pricePerPerson,
+        status: body.status ?? "published",
+      },
+      c.env,
+    );
+  } catch (error) {
+    if (error instanceof EventImageGenerationError) {
+      return c.json({ error: error.message }, 502);
+    }
+    throw error;
+  }
+
+  if (!image) {
+    return c.json({ error: "Complete title, description, ludic menu, location, date, seats and price before generating an image" }, 400);
+  }
+
+  return c.json({ image });
+});
 
 encuentrosRoutes.get("/:id/comments/mine", async (c) => {
   const db = createDbClient(c.env.DB);
@@ -420,7 +497,7 @@ encuentrosRoutes.patch("/comments/:commentId/moderate", adminOnly, async (c) => 
   return c.json({ comment: toPublicComment(new URL(c.req.url).origin, updated) });
 });
 
-encuentrosRoutes.post("/", async (c) => {
+encuentrosRoutes.post("/", adminOnly, async (c) => {
   const db = createDbClient(c.env.DB);
   const userId = c.get("userId");
   const body = await c.req.json<{
@@ -449,6 +526,9 @@ encuentrosRoutes.post("/", async (c) => {
 
   if (Number.isNaN(startsAt.getTime()) || (endsAt && Number.isNaN(endsAt.getTime()))) {
     return c.json({ error: "Invalid date format" }, 400);
+  }
+  if (!isValidSameDayEventWindow(startsAt, endsAt)) {
+    return c.json({ error: "Event must start and end on the same day" }, 400);
   }
 
   const maxSeats = body.maxSeats ?? 20;
@@ -498,9 +578,12 @@ encuentrosRoutes.post("/", async (c) => {
   return c.json({ encuentro: withImageUrl(origin, newEncuentro) }, 201);
 });
 
-encuentrosRoutes.patch("/:id", async (c) => {
+encuentrosRoutes.patch("/:id", adminOnly, async (c) => {
   const db = createDbClient(c.env.DB);
   const id = c.req.param("id");
+  if (!id) {
+    return c.json({ error: "Encuentro id is required" }, 400);
+  }
   const body = await c.req.json<{
     title?: string;
     description?: string | null;
@@ -551,6 +634,16 @@ encuentrosRoutes.patch("/:id", async (c) => {
       patch.endsAt = endsAt;
     }
   }
+  const nextStartsAt = patch.startsAt instanceof Date ? patch.startsAt : existing.startsAt;
+  const nextEndsAt =
+    body.endsAt === undefined
+      ? existing.endsAt
+      : patch.endsAt instanceof Date
+        ? patch.endsAt
+        : null;
+  if (!isValidSameDayEventWindow(nextStartsAt, nextEndsAt)) {
+    return c.json({ error: "Event must start and end on the same day" }, 400);
+  }
   if (body.maxSeats !== undefined) patch.maxSeats = body.maxSeats;
   if (body.availableSeats !== undefined) patch.availableSeats = body.availableSeats;
   if (body.pricePerPerson !== undefined) {
@@ -589,9 +682,12 @@ encuentrosRoutes.patch("/:id", async (c) => {
   return c.json({ encuentro: withImageUrl(new URL(c.req.url).origin, updated) });
 });
 
-encuentrosRoutes.delete("/:id", async (c) => {
+encuentrosRoutes.delete("/:id", adminOnly, async (c) => {
   const db = createDbClient(c.env.DB);
   const id = c.req.param("id");
+  if (!id) {
+    return c.json({ error: "Encuentro id is required" }, 400);
+  }
 
   const existing = await db.select().from(encuentros).where(eq(encuentros.id, id)).get();
   if (!existing) {

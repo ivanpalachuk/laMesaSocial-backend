@@ -6,9 +6,11 @@ export type AppEnv = {
     DB: D1Database;
     IMAGES: R2Bucket;
     IMAGE_TRANSFORMER: ImagesBinding;
+    AI: Ai;
     JWT_SECRET: string;
     JWT_REFRESH_SECRET: string;
     RESEND_API_KEY?: string;
+    GEMINI_API_KEY?: string;
     RESEND_FROM_EMAIL?: string;
     PASSWORD_RESET_FROM_EMAIL?: string;
     RESEND_FROM_NAME?: string;

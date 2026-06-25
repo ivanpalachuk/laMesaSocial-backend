@@ -5,6 +5,7 @@ export const PRODUCTO_CATEGORIES = [
   "cooperativo",
   "dados",
   "deduccion",
+  "destreza",
   "estrategia",
   "eurogame",
   "familiar",

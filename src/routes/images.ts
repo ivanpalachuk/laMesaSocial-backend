@@ -183,7 +183,7 @@ imagesRoutes.get("/*", async (c) => {
       headers,
     });
   } catch {
-    return c.json({ error: "Image transform failed" }, 400);
+    return serveOriginalImage(c, "/api/images/");
   }
 });
 

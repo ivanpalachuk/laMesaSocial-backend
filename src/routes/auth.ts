@@ -6,7 +6,7 @@ import type { AppEnv } from "../middleware/auth";
 import { resolveEmailConfig, sendPasswordResetEmail, sendWelcomeEmail } from "../utils/email";
 import { generateAccessToken, generateId, generateRefreshToken, verifyToken } from "../utils/jwt";
 import { hashPassword, verifyPassword } from "../utils/password";
-import { serializeUserProfile } from "../utils/user-profile";
+import { resolveEffectiveUserRole, serializeUserProfile } from "../utils/user-profile";
 
 const auth = new Hono<AppEnv>();
 
@@ -38,6 +38,7 @@ auth.post("/register", async (c) => {
     password: await hashPassword(body.password),
     name: body.name,
     role: "user" as const,
+    canEditArticles: false,
     isActive: true,
     avatarImageKey: null,
     avatarImageKeys: "[]",
@@ -83,7 +84,7 @@ auth.post("/login", async (c) => {
     return c.json({ error: "Invalid credentials" }, 401);
   }
 
-  const accessToken = await generateAccessToken(user.id, user.email, user.role, c.env.JWT_SECRET);
+  const accessToken = await generateAccessToken(user.id, user.email, resolveEffectiveUserRole(user), c.env.JWT_SECRET);
   const refreshToken = await generateRefreshToken(user.id, c.env.JWT_REFRESH_SECRET);
 
   await db
@@ -133,7 +134,7 @@ auth.post("/refresh", async (c) => {
     return c.json({ error: "User not found" }, 404);
   }
 
-  const accessToken = await generateAccessToken(user.id, user.email, user.role, c.env.JWT_SECRET);
+  const accessToken = await generateAccessToken(user.id, user.email, resolveEffectiveUserRole(user), c.env.JWT_SECRET);
   return c.json({ accessToken });
 });
 

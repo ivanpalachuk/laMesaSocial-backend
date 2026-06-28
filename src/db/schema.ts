@@ -9,6 +9,7 @@ export const users = sqliteTable("users", {
   role: text("role", { enum: ["admin", "user"] })
     .notNull()
     .default("user"),
+  canEditArticles: integer("can_edit_articles", { mode: "boolean" }).notNull().default(false),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   avatarImageKey: text("avatar_image_key"),
   avatarImageKeys: text("avatar_image_keys").notNull().default("[]"),

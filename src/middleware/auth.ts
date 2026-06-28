@@ -18,6 +18,7 @@ export type AppEnv = {
     EMAIL_LOGO_URL?: string;
     WELCOME_EMAIL_LOGO_URL?: string;
     ORDERS_FROM_EMAIL?: string;
+    EVENTS_FROM_EMAIL?: string;
     ORDERS_ADMIN_EMAIL?: string;
     CORS_ORIGINS?: string;
   };
@@ -27,6 +28,16 @@ export type AppEnv = {
     userRole: string;
   };
 };
+
+export type UserRole = "admin" | "article_editor" | "user";
+
+export function isAdminRole(role: string | undefined) {
+  return role === "admin";
+}
+
+export function canManageArticles(role: string | undefined) {
+  return role === "admin" || role === "article_editor";
+}
 
 export async function authMiddleware(c: Context<AppEnv>, next: Next) {
   const authHeader = c.req.header("Authorization");
@@ -50,8 +61,16 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
 }
 
 export async function adminOnly(c: Context<AppEnv>, next: Next) {
-  if (c.get("userRole") !== "admin") {
+  if (!isAdminRole(c.get("userRole"))) {
     return c.json({ error: "Forbidden: Admin access required" }, 403);
+  }
+
+  await next();
+}
+
+export async function articleManagerOnly(c: Context<AppEnv>, next: Next) {
+  if (!canManageArticles(c.get("userRole"))) {
+    return c.json({ error: "Forbidden: Article editor access required" }, 403);
   }
 
   await next();

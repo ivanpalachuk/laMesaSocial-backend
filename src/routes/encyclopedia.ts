@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { and, asc, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import { createDbClient } from "../db";
 import { encyclopediaArticles, productos } from "../db/schema";
-import { adminOnly, authMiddleware, type AppEnv } from "../middleware/auth";
+import { articleManagerOnly, authMiddleware, type AppEnv } from "../middleware/auth";
 import { generateId } from "../utils/jwt";
 
 const encyclopediaRoutes = new Hono<AppEnv>();
@@ -15,7 +15,7 @@ type WorkersAiImageResponse = {
   image?: string;
 };
 
-const TOPICS = ["general", "mecanicas", "guias"] as const;
+const TOPICS = ["general", "mecanicas", "guias", "la_columna_del_caminante"] as const;
 
 function jsonHeaders() {
   return { "Content-Type": "application/json" };
@@ -224,7 +224,7 @@ function validateArticleInput(body: { title?: string; summary?: string; content?
 
 function buildArticleImagePrompt(input: { title: string; summary: string; content: string; topic: string }) {
   return [
-    "Genera una imagen horizontal 16:9 para una enciclopedia de juegos de mesa de La Mesa Social.",
+    "Genera una imagen horizontal 16:9 para la sección de artículos de juegos de mesa de La Mesa Social.",
     "Estilo: fotografia editorial calida y realista, componentes de juegos modernos sobre una mesa, manos aprendiendo o comparando piezas, ambiente cercano.",
     "Marca: marron tierra #5d4037, naranja #f57c00, fondo claro #fbf9f5 y acentos teal #005049. Evitar estética de casino o marcas registradas.",
     "Composicion: clara, educativa, con espacio limpio para texto superpuesto. No generar texto legible, logos ni tableros registrados reconocibles.",
@@ -253,7 +253,7 @@ encyclopediaRoutes.get("/", async (c) => {
 
 encyclopediaRoutes.get("/topics", (c) => c.json({ topics: TOPICS }));
 
-encyclopediaRoutes.get("/admin/all", authMiddleware, adminOnly, async (c) => {
+encyclopediaRoutes.get("/admin/all", authMiddleware, articleManagerOnly, async (c) => {
   const db = createDbClient(c.env.DB);
   const origin = new URL(c.req.url).origin;
   const status = c.req.query("status") as ArticleStatus | undefined;
@@ -284,7 +284,7 @@ encyclopediaRoutes.get("/:id", async (c) => {
   return c.json({ article: { ...article, relatedProductos } });
 });
 
-encyclopediaRoutes.use("*", authMiddleware, adminOnly);
+encyclopediaRoutes.use("*", authMiddleware, articleManagerOnly);
 
 encyclopediaRoutes.post("/generate-image", async (c) => {
   const body = await c.req.json<{ title?: string; summary?: string; content?: string; topic?: string }>();

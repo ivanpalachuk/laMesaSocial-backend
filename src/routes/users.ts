@@ -3,14 +3,25 @@ import { and, desc, eq, like, ne, or, sql } from "drizzle-orm";
 import { createDbClient } from "../db";
 import { users } from "../db/schema";
 import type { AppEnv } from "../middleware/auth";
+import type { UserRole } from "../middleware/auth";
 import { generateId } from "../utils/jwt";
 import { hashPassword } from "../utils/password";
+import { resolveEffectiveUserRole } from "../utils/user-profile";
 
 const usersRoutes = new Hono<AppEnv>();
 
-function withoutPassword<T extends { password: string }>(user: T) {
+function normalizePersistedRole(role: string | undefined): "admin" | "user" {
+  if (role === "admin") return role;
+  return "user";
+}
+
+function shouldEnableArticleEditing(role: UserRole | undefined) {
+  return role === "article_editor";
+}
+
+function withoutPassword<T extends { canEditArticles: boolean; password: string; role: "admin" | "user" }>(user: T) {
   const { password: _, ...safeUser } = user;
-  return safeUser;
+  return { ...safeUser, role: resolveEffectiveUserRole(user) };
 }
 
 async function countOtherActiveAdmins(db: ReturnType<typeof createDbClient>, excludeUserId: string) {
@@ -61,7 +72,7 @@ usersRoutes.post("/", async (c) => {
     name: string;
     email: string;
     password: string;
-    role?: "admin" | "user";
+    role?: UserRole;
   }>();
 
   if (!body.name?.trim() || !body.email?.trim() || !body.password) {
@@ -84,7 +95,8 @@ usersRoutes.post("/", async (c) => {
     email,
     password: await hashPassword(body.password),
     name: body.name.trim(),
-    role: body.role === "admin" ? ("admin" as const) : ("user" as const),
+    role: normalizePersistedRole(body.role),
+    canEditArticles: shouldEnableArticleEditing(body.role),
     isActive: true,
     createdAt: now,
     updatedAt: now,
@@ -102,7 +114,7 @@ usersRoutes.patch("/:id", async (c) => {
   const body = await c.req.json<{
     name?: string;
     email?: string;
-    role?: "admin" | "user";
+    role?: UserRole;
     isActive?: boolean;
     password?: string;
   }>();
@@ -112,8 +124,11 @@ usersRoutes.patch("/:id", async (c) => {
     return c.json({ error: "User not found" }, 404);
   }
 
+  const nextRole = body.role === undefined ? undefined : normalizePersistedRole(body.role);
+  const nextCanEditArticles = body.role === undefined ? undefined : shouldEnableArticleEditing(body.role);
+
   if (id === actorId) {
-    if (body.role === "user") {
+    if (nextRole && nextRole !== "admin") {
       return c.json({ error: "Cannot demote your own admin role" }, 400);
     }
 
@@ -122,7 +137,7 @@ usersRoutes.patch("/:id", async (c) => {
     }
   }
 
-  if ((body.role === "user" || body.isActive === false) && user.role === "admin" && user.isActive) {
+  if (((nextRole !== undefined && nextRole !== "admin") || body.isActive === false) && user.role === "admin" && user.isActive) {
     const otherActiveAdmins = await countOtherActiveAdmins(db, id);
     if (otherActiveAdmins === 0) {
       return c.json({ error: "Cannot remove the last active admin" }, 400);
@@ -147,6 +162,7 @@ usersRoutes.patch("/:id", async (c) => {
     name?: string;
     email?: string;
     role?: "admin" | "user";
+    canEditArticles?: boolean;
     isActive?: boolean;
     password?: string;
     updatedAt: Date;
@@ -156,7 +172,8 @@ usersRoutes.patch("/:id", async (c) => {
 
   if (body.name?.trim()) updates.name = body.name.trim();
   if (body.email?.trim()) updates.email = body.email.toLowerCase().trim();
-  if (body.role === "admin" || body.role === "user") updates.role = body.role;
+  if (nextRole) updates.role = nextRole;
+  if (nextCanEditArticles !== undefined) updates.canEditArticles = nextCanEditArticles;
   if (typeof body.isActive === "boolean") updates.isActive = body.isActive;
   if (body.password) updates.password = await hashPassword(body.password);
 

@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { authMiddleware, type AppEnv } from "../middleware/auth";
+import { authMiddleware, canManageArticles, isAdminRole, type AppEnv } from "../middleware/auth";
 
 const imagesRoutes = new Hono<AppEnv>();
 const RAW_IMAGE_PREFIX = "/api/images/raw/";
@@ -51,6 +51,15 @@ imagesRoutes.post("/upload", authMiddleware, async (c) => {
   const fileEntry = formData.get("file");
   const folderRaw = String(formData.get("folder") ?? "encuentros");
   const folder = folderRaw.replace(/[^a-zA-Z0-9/_-]/g, "") || "encuentros";
+  const userRole = c.get("userRole");
+
+  if (folder === "enciclopedia") {
+    if (!canManageArticles(userRole)) {
+      return c.json({ error: "Forbidden: Article editor access required" }, 403);
+    }
+  } else if (folder !== "avatars" && !isAdminRole(userRole)) {
+    return c.json({ error: "Forbidden: Admin access required" }, 403);
+  }
 
   if (!fileEntry || typeof fileEntry === "string") {
     return c.json({ error: "Missing file" }, 400);

@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { and, asc, desc, eq, gt, lte, or, sql, type SQL } from "drizzle-orm";
 import { createDbClient } from "../db";
 import { productos } from "../db/schema";
-import { authMiddleware, type AppEnv } from "../middleware/auth";
+import { adminOnly, authMiddleware, type AppEnv } from "../middleware/auth";
 import { generateId } from "../utils/jwt";
 
 const productosRoutes = new Hono<AppEnv>();
@@ -407,7 +407,7 @@ productosRoutes.get("/:id", async (c) => {
 productosRoutes.use("*", authMiddleware);
 
 // Admin: list all products regardless of status
-productosRoutes.get("/admin/all", async (c) => {
+productosRoutes.get("/admin/all", adminOnly, async (c) => {
   const db = createDbClient(c.env.DB);
   const origin = new URL(c.req.url).origin;
   const pagination = parseListPagination(c, 20);
@@ -418,7 +418,7 @@ productosRoutes.get("/admin/all", async (c) => {
 });
 
 // Create
-productosRoutes.post("/", async (c) => {
+productosRoutes.post("/", adminOnly, async (c) => {
   const db = createDbClient(c.env.DB);
   const userId = c.get("userId");
   const body = await c.req.json<{
@@ -476,9 +476,10 @@ productosRoutes.post("/", async (c) => {
 });
 
 // Update
-productosRoutes.patch("/:id", async (c) => {
+productosRoutes.patch("/:id", adminOnly, async (c) => {
   const db = createDbClient(c.env.DB);
   const id = c.req.param("id");
+  if (!id) return c.json({ error: "Producto id required" }, 400);
   const existing = await db.select().from(productos).where(eq(productos.id, id)).get();
   if (!existing) return c.json({ error: "Producto not found" }, 404);
 
@@ -538,9 +539,10 @@ productosRoutes.patch("/:id", async (c) => {
 });
 
 // Delete
-productosRoutes.delete("/:id", async (c) => {
+productosRoutes.delete("/:id", adminOnly, async (c) => {
   const db = createDbClient(c.env.DB);
   const id = c.req.param("id");
+  if (!id) return c.json({ error: "Producto id required" }, 400);
   const existing = await db.select().from(productos).where(eq(productos.id, id)).get();
   if (!existing) return c.json({ error: "Producto not found" }, 404);
   await db.delete(productos).where(eq(productos.id, id)).run();

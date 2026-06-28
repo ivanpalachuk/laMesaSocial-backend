@@ -17,6 +17,14 @@ export type AvatarPresetId = (typeof AVATAR_PRESET_IDS)[number];
 export { parseGamerDna, serializeGamerDna };
 export type { ProductoCategory as GamerDnaOption } from "../constants/product-categories";
 
+export type EffectiveUserRole = "admin" | "article_editor" | "user";
+
+export function resolveEffectiveUserRole(user: Pick<typeof users.$inferSelect, "canEditArticles" | "role">): EffectiveUserRole {
+  if (user.role === "admin") return "admin";
+  if (user.canEditArticles) return "article_editor";
+  return "user";
+}
+
 export function isAvatarPresetId(value: string): value is AvatarPresetId {
   return (AVATAR_PRESET_IDS as readonly string[]).includes(value);
 }
@@ -120,7 +128,8 @@ export async function serializeUserProfile(
     id: rest.id,
     email: rest.email,
     name: rest.name,
-    role: rest.role,
+    role: resolveEffectiveUserRole(user),
+    canEditArticles: rest.canEditArticles,
     isActive: rest.isActive,
     avatarImageKey: activeAvatarImageKey,
     avatarImageKeys,

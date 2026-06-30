@@ -244,13 +244,18 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
 
       const updatedPedido = await db.select().from(pedidos).where(eq(pedidos.id, pedido.id)).get();
 
+      const useSandbox = c.env.MERCADOPAGO_USE_SANDBOX === "true";
+      const initPoint = useSandbox && preference.sandbox_init_point
+        ? preference.sandbox_init_point
+        : preference.init_point;
+
       return c.json(
         {
           pedido: formatPedidoResponse(updatedPedido ?? pedido, savedItems),
           payment: {
             provider: "mercadopago",
             preferenceId: preference.id,
-            initPoint: preference.init_point,
+            initPoint,
             sandboxInitPoint: preference.sandbox_init_point,
           },
         },

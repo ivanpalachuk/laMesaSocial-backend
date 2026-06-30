@@ -28,6 +28,7 @@ EVENTS_FROM_EMAIL = "evento@lamesasocial.com.ar"
 ORDERS_ADMIN_EMAIL = "hola@lamesasocial.com.ar"
 EMAIL_LOGO_URL = "https://lamesasocial.com.ar/711309238_18087093581102996_1979510018140210310_n.jpg"
 MERCADOPAGO_WEBHOOK_URL = "https://api.lamesasocial.com.ar/api/payments/mercadopago/webhook"
+MERCADOPAGO_USE_SANDBOX = "true"
 
 [env.production]
 name = "lamesasocial-backend-prod"
@@ -62,3 +63,4 @@ EVENTS_FROM_EMAIL = "evento@lamesasocial.com.ar"
 ORDERS_ADMIN_EMAIL = "hola@lamesasocial.com.ar"
 EMAIL_LOGO_URL = "https://lamesasocial.com.ar/711309238_18087093581102996_1979510018140210310_n.jpg"
 MERCADOPAGO_WEBHOOK_URL = "https://api.lamesasocial.com.ar/api/payments/mercadopago/webhook"
+MERCADOPAGO_USE_SANDBOX = "true"

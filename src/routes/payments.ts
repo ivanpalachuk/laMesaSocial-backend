@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import { eq } from "drizzle-orm";
 import { createDbClient } from "../db";
-import { pedidos } from "../db/schema";
+import { pedidoItems, pedidos, productos } from "../db/schema";
 import type { AppEnv } from "../middleware/auth";
 import { fetchMercadoPagoPayment } from "../utils/mercadopago";
 
@@ -52,6 +52,40 @@ function extractPaymentId(c: PaymentsContext, body: unknown): string | null {
   return null;
 }
 
+async function reservePedidoStock(db: ReturnType<typeof createDbClient>, pedidoId: string): Promise<boolean> {
+  const pedido = await db.select().from(pedidos).where(eq(pedidos.id, pedidoId)).get();
+  if (!pedido) return false;
+  if (pedido.status === "confirmed" || pedido.status === "fulfilled") return true;
+
+  const items = await db.select().from(pedidoItems).where(eq(pedidoItems.pedidoId, pedidoId)).all();
+
+  for (const item of items) {
+    const product = await db.select().from(productos).where(eq(productos.id, item.productoId)).get();
+    if (!product || product.status === "draft" || product.status === "sold_out" || product.stock < item.quantity) {
+      return false;
+    }
+  }
+
+  const now = new Date();
+  for (const item of items) {
+    const product = await db.select().from(productos).where(eq(productos.id, item.productoId)).get();
+    if (!product) return false;
+
+    const newStock = product.stock - item.quantity;
+    await db
+      .update(productos)
+      .set({
+        stock: newStock,
+        status: newStock > 0 ? "available" : "sold_out",
+        updatedAt: now,
+      })
+      .where(eq(productos.id, item.productoId))
+      .run();
+  }
+
+  return true;
+}
+
 paymentsRoutes.post("/mercadopago/webhook", async (c: PaymentsContext) => {
   const type = c.req.query("type") || c.req.query("topic");
   let body: unknown = null;
@@ -81,19 +115,23 @@ paymentsRoutes.post("/mercadopago/webhook", async (c: PaymentsContext) => {
   const { paymentStatus, pedidoStatus } = mapMercadoPagoPaymentStatus(payment.status);
   const db = createDbClient(c.env.DB);
   const now = new Date();
+  const canConfirm = pedidoStatus !== "confirmed" || await reservePedidoStock(db, pedidoId);
+  const finalPedidoStatus = canConfirm ? pedidoStatus : "pending";
+  const finalPaymentStatus = canConfirm ? paymentStatus : "approved_stock_conflict";
 
   await db
     .update(pedidos)
     .set({
-      status: pedidoStatus,
+      status: finalPedidoStatus,
       paymentProvider: "mercadopago",
-      paymentStatus,
+      paymentStatus: finalPaymentStatus,
       paymentId: String(payment.id),
       paymentLastPayload: JSON.stringify({
         id: payment.id,
         status: payment.status,
         status_detail: payment.status_detail,
         external_reference: payment.external_reference,
+        stock_reserved: canConfirm,
       }),
       updatedAt: now,
     })

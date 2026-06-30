@@ -44,6 +44,10 @@ async function rollbackPedidoReservation(
   await db.delete(pedidos).where(eq(pedidos.id, pedidoId)).run();
 }
 
+async function deletePedido(db: ReturnType<typeof createDbClient>, pedidoId: string) {
+  await db.delete(pedidos).where(eq(pedidos.id, pedidoId)).run();
+}
+
 function formatPedidoResponse(
   pedido: typeof pedidos.$inferSelect,
   items: (typeof pedidoItems.$inferSelect)[],
@@ -162,6 +166,9 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
     updatedAt: now,
   }).run();
 
+  const shouldReserveStock = paymentProvider === "manual";
+  const reservedItems: typeof lineItems = [];
+
   try {
     for (const item of lineItems) {
       await db.insert(pedidoItems).values({
@@ -174,18 +181,25 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
         lineTotal: item.lineTotal,
       }).run();
 
-      await db
-        .update(productos)
-        .set({
-          stock: item.newStock,
-          status: item.newStatus,
-          updatedAt: now,
-        })
-        .where(eq(productos.id, item.productoId))
-        .run();
+      if (shouldReserveStock) {
+        await db
+          .update(productos)
+          .set({
+            stock: item.newStock,
+            status: item.newStatus,
+            updatedAt: now,
+          })
+          .where(eq(productos.id, item.productoId))
+          .run();
+        reservedItems.push(item);
+      }
     }
   } catch (error) {
-    await db.delete(pedidos).where(eq(pedidos.id, pedidoId)).run();
+    if (reservedItems.length > 0) {
+      await rollbackPedidoReservation(db, pedidoId, reservedItems);
+    } else {
+      await deletePedido(db, pedidoId);
+    }
     throw error;
   }
 
@@ -262,7 +276,7 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
         201,
       );
     } catch (error) {
-      await rollbackPedidoReservation(db, pedido.id, lineItems);
+      await deletePedido(db, pedido.id);
       throw error;
     }
   }

@@ -17,11 +17,30 @@ const SHIPPING_COST_MDQ = 2500;
 type PedidoStatus = "pending" | "confirmed" | "cancelled" | "fulfilled";
 type PedidoContext = Context<AppEnv>;
 type PaymentProvider = "manual" | "mercadopago";
+type DeliveryMethod = "pickup" | "shipping";
 
 type CheckoutItemInput = {
   productoId: string;
   quantity: number;
 };
+
+function resolveDeliveryMethod(value: unknown): DeliveryMethod {
+  return value === "shipping" ? "shipping" : "pickup";
+}
+
+function deliveryDetails(method: DeliveryMethod) {
+  if (method === "shipping") {
+    return {
+      shippingCost: SHIPPING_COST_MDQ,
+      shippingCity: "Mar del Plata, MDQ",
+    };
+  }
+
+  return {
+    shippingCost: 0,
+    shippingCity: "Retiro en sucursal",
+  };
+}
 
 async function rollbackPedidoReservation(
   db: ReturnType<typeof createDbClient>,
@@ -83,7 +102,12 @@ pedidosRoutes.use("*", authMiddleware);
 pedidosRoutes.post("/", async (c: PedidoContext) => {
   const db = createDbClient(c.env.DB);
   const userId = c.get("userId");
-  const body = await c.req.json<{ items?: CheckoutItemInput[]; notes?: string; paymentProvider?: PaymentProvider }>();
+  const body = await c.req.json<{
+    items?: CheckoutItemInput[];
+    notes?: string;
+    paymentProvider?: PaymentProvider;
+    deliveryMethod?: DeliveryMethod;
+  }>();
 
   const rawItems = body.items ?? [];
   if (!rawItems.length) {
@@ -142,7 +166,8 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
   }
 
   const subtotal = lineItems.reduce((sum, item) => sum + item.lineTotal, 0);
-  const shippingCost = SHIPPING_COST_MDQ;
+  const deliveryMethod = resolveDeliveryMethod(body.deliveryMethod);
+  const { shippingCost, shippingCity } = deliveryDetails(deliveryMethod);
   const total = subtotal + shippingCost;
   const now = new Date();
   const pedidoId = generateId();
@@ -158,7 +183,7 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
     total,
     customerName: user.name,
     customerEmail: user.email,
-    shippingCity: "Mar del Plata",
+    shippingCity,
     notes,
     paymentProvider,
     paymentStatus: paymentProvider === "mercadopago" ? "pending" : "not_started",
@@ -236,13 +261,17 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
             unit_price: item.unitPrice,
             currency_id: "ARS" as const,
           })),
-          {
-            id: "shipping-mdq",
-            title: `Envío a ${pedido.shippingCity}`,
-            quantity: 1,
-            unit_price: pedido.shippingCost,
-            currency_id: "ARS" as const,
-          },
+          ...(pedido.shippingCost > 0
+            ? [
+                {
+                  id: "shipping-mdq",
+                  title: `Envío a ${pedido.shippingCity}`,
+                  quantity: 1,
+                  unit_price: pedido.shippingCost,
+                  currency_id: "ARS" as const,
+                },
+              ]
+            : []),
         ],
       });
 

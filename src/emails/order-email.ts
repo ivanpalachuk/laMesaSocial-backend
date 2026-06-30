@@ -68,7 +68,7 @@ export function buildOrderConfirmationEmailHtml(content: OrderEmailContent): str
           <tr>
             <td style="padding:0 32px 24px;">
               <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#504441;">
-                Registramos tu pedido <strong>#${safeOrderId}</strong>. Te contactaremos pronto para coordinar el pago y la entrega en ${safeCity}.
+                Registramos tu pedido <strong>#${safeOrderId}</strong>. Te contactaremos pronto para coordinar la entrega en ${safeCity}.
               </p>
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 20px;">
                 <thead>
@@ -87,7 +87,7 @@ export function buildOrderConfirmationEmailHtml(content: OrderEmailContent): str
               </table>
               ${safeNotes ? `<p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#504441;"><strong>Notas:</strong> ${safeNotes}</p>` : ""}
               <p style="margin:0;font-size:14px;line-height:1.6;color:#504441;">
-                Todavía no procesamos el pago online. Te escribiremos por mail o Instagram para confirmar la forma de pago.
+                Vamos a revisar el pedido y avisarte los próximos pasos.
               </p>
             </td>
           </tr>
@@ -124,7 +124,7 @@ Total: ${formatMoney(content.total)}
 
 Envío a: ${content.shippingCity}
 ${content.notes?.trim() ? `\nNotas: ${content.notes.trim()}\n` : ""}
-Te contactaremos pronto para coordinar el pago y la entrega.
+Te contactaremos pronto para coordinar la entrega.
 
 La Mesa Social
 ${content.appUrl}`;

@@ -25,6 +25,7 @@ export type EmailConfig = {
   welcomeFrom: string;
   passwordResetFrom: string;
   ordersFrom: string;
+  eventsFrom: string;
   appUrl: string;
   logoUrl: string;
 };
@@ -162,6 +163,7 @@ export function resolveEmailConfig(env: {
   RESEND_FROM_EMAIL?: string;
   PASSWORD_RESET_FROM_EMAIL?: string;
   ORDERS_FROM_EMAIL?: string;
+  EVENTS_FROM_EMAIL?: string;
   APP_URL?: string;
   EMAIL_LOGO_URL?: string;
   WELCOME_EMAIL_LOGO_URL?: string;
@@ -173,6 +175,7 @@ export function resolveEmailConfig(env: {
   const welcomeEmail = env.RESEND_FROM_EMAIL.trim();
   const passwordResetEmail = (env.PASSWORD_RESET_FROM_EMAIL ?? "seguridad@lamesasocial.com.ar").trim();
   const ordersEmail = (env.ORDERS_FROM_EMAIL ?? welcomeEmail).trim();
+  const eventsEmail = (env.EVENTS_FROM_EMAIL ?? "evento@lamesasocial.com.ar").trim();
   const logoUrl = (env.EMAIL_LOGO_URL ?? env.WELCOME_EMAIL_LOGO_URL ?? DEFAULT_LOGO_URL).trim();
 
   return {
@@ -180,6 +183,7 @@ export function resolveEmailConfig(env: {
     welcomeFrom: buildFromAddress(fromName, welcomeEmail),
     passwordResetFrom: buildFromAddress(fromName, passwordResetEmail),
     ordersFrom: buildFromAddress(fromName, ordersEmail),
+    eventsFrom: buildFromAddress(fromName, eventsEmail),
     appUrl: (env.APP_URL ?? "https://lamesasocial.com.ar").replace(/\/$/, ""),
     logoUrl,
   };

@@ -9,17 +9,40 @@ import {
   sendOrderConfirmationEmail,
 } from "../utils/email";
 import { generateId } from "../utils/jwt";
+import { createMercadoPagoPreference } from "../utils/mercadopago";
 
 const pedidosRoutes = new Hono<AppEnv>();
 
 const SHIPPING_COST_MDQ = 2500;
 type PedidoStatus = "pending" | "confirmed" | "cancelled" | "fulfilled";
 type PedidoContext = Context<AppEnv>;
+type PaymentProvider = "manual" | "mercadopago";
 
 type CheckoutItemInput = {
   productoId: string;
   quantity: number;
 };
+
+async function rollbackPedidoReservation(
+  db: ReturnType<typeof createDbClient>,
+  pedidoId: string,
+  lineItems: { productoId: string; quantity: number; newStock: number }[],
+) {
+  for (const item of lineItems) {
+    const restoredStock = item.newStock + item.quantity;
+    await db
+      .update(productos)
+      .set({
+        stock: restoredStock,
+        status: "available",
+        updatedAt: new Date(),
+      })
+      .where(eq(productos.id, item.productoId))
+      .run();
+  }
+
+  await db.delete(pedidos).where(eq(pedidos.id, pedidoId)).run();
+}
 
 function formatPedidoResponse(
   pedido: typeof pedidos.$inferSelect,
@@ -35,6 +58,10 @@ function formatPedidoResponse(
     customerEmail: pedido.customerEmail,
     shippingCity: pedido.shippingCity,
     notes: pedido.notes,
+    paymentProvider: pedido.paymentProvider,
+    paymentStatus: pedido.paymentStatus,
+    paymentPreferenceId: pedido.paymentPreferenceId,
+    paymentId: pedido.paymentId,
     createdAt: pedido.createdAt,
     items: items.map((item) => ({
       id: item.id,
@@ -52,7 +79,7 @@ pedidosRoutes.use("*", authMiddleware);
 pedidosRoutes.post("/", async (c: PedidoContext) => {
   const db = createDbClient(c.env.DB);
   const userId = c.get("userId");
-  const body = await c.req.json<{ items?: CheckoutItemInput[]; notes?: string }>();
+  const body = await c.req.json<{ items?: CheckoutItemInput[]; notes?: string; paymentProvider?: PaymentProvider }>();
 
   const rawItems = body.items ?? [];
   if (!rawItems.length) {
@@ -116,6 +143,7 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
   const now = new Date();
   const pedidoId = generateId();
   const notes = typeof body.notes === "string" ? body.notes.trim().slice(0, 500) : null;
+  const paymentProvider: PaymentProvider = body.paymentProvider === "mercadopago" ? "mercadopago" : "manual";
 
   await db.insert(pedidos).values({
     id: pedidoId,
@@ -128,6 +156,8 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
     customerEmail: user.email,
     shippingCity: "Mar del Plata",
     notes,
+    paymentProvider,
+    paymentStatus: paymentProvider === "mercadopago" ? "pending" : "not_started",
     createdAt: now,
     updatedAt: now,
   }).run();
@@ -168,6 +198,68 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
 
   if (!pedido) {
     return c.json({ error: "No se pudo crear el pedido" }, 500);
+  }
+
+  if (paymentProvider === "mercadopago") {
+    try {
+      const origin = new URL(c.req.url).origin;
+      const notificationUrl =
+        c.env.MERCADOPAGO_WEBHOOK_URL?.trim() || `${origin}/api/payments/mercadopago/webhook`;
+      const preference = await createMercadoPagoPreference({
+        accessToken: c.env.MERCADOPAGO_ACCESS_TOKEN ?? "",
+        appUrl: c.env.APP_URL ?? "https://lamesasocial.com.ar",
+        notificationUrl,
+        pedidoId: pedido.id,
+        payer: {
+          name: pedido.customerName,
+          email: pedido.customerEmail,
+        },
+        items: [
+          ...savedItems.map((item) => ({
+            id: item.productoId,
+            title: item.title,
+            quantity: item.quantity,
+            unit_price: item.unitPrice,
+            currency_id: "ARS" as const,
+          })),
+          {
+            id: "shipping-mdq",
+            title: `Envío a ${pedido.shippingCity}`,
+            quantity: 1,
+            unit_price: pedido.shippingCost,
+            currency_id: "ARS" as const,
+          },
+        ],
+      });
+
+      await db
+        .update(pedidos)
+        .set({
+          paymentPreferenceId: preference.id,
+          paymentInitPoint: preference.init_point,
+          updatedAt: new Date(),
+        })
+        .where(eq(pedidos.id, pedido.id))
+        .run();
+
+      const updatedPedido = await db.select().from(pedidos).where(eq(pedidos.id, pedido.id)).get();
+
+      return c.json(
+        {
+          pedido: formatPedidoResponse(updatedPedido ?? pedido, savedItems),
+          payment: {
+            provider: "mercadopago",
+            preferenceId: preference.id,
+            initPoint: preference.init_point,
+            sandboxInitPoint: preference.sandbox_init_point,
+          },
+        },
+        201,
+      );
+    } catch (error) {
+      await rollbackPedidoReservation(db, pedido.id, lineItems);
+      throw error;
+    }
   }
 
   const emailConfig = resolveEmailConfig(c.env);

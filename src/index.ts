@@ -8,6 +8,7 @@ import productosRoutes from "./routes/productos";
 import encyclopediaRoutes from "./routes/encyclopedia";
 import meRoutes from "./routes/me";
 import pedidosRoutes from "./routes/pedidos";
+import paymentsRoutes from "./routes/payments";
 import adminStatsRoutes from "./routes/admin-stats";
 import { adminOnly, authMiddleware, type AppEnv } from "./middleware/auth";
 
@@ -60,6 +61,7 @@ app.route("/api/productos", productosRoutes);
 app.route("/api/encyclopedia", encyclopediaRoutes);
 app.route("/api/me", meRoutes);
 app.route("/api/pedidos", pedidosRoutes);
+app.route("/api/payments", paymentsRoutes);
 app.use("/api/admin/stats*", authMiddleware, adminOnly);
 app.route("/api/admin/stats", adminStatsRoutes);
 

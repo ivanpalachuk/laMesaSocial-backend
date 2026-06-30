@@ -183,6 +183,12 @@ export const pedidos = sqliteTable("pedidos", {
   customerEmail: text("customer_email").notNull(),
   shippingCity: text("shipping_city").notNull().default("Mar del Plata"),
   notes: text("notes"),
+  paymentProvider: text("payment_provider").notNull().default("manual"),
+  paymentStatus: text("payment_status").notNull().default("not_started"),
+  paymentPreferenceId: text("payment_preference_id"),
+  paymentId: text("payment_id"),
+  paymentInitPoint: text("payment_init_point"),
+  paymentLastPayload: text("payment_last_payload"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });

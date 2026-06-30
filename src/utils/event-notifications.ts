@@ -46,7 +46,7 @@ async function sendNewEventEmail(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: config.welcomeFrom,
+      from: config.eventsFrom,
       to: [recipient.email],
       subject: `Nuevo evento: ${event.title} — La Mesa Social`,
       html: buildNewEventEmailHtml(content),

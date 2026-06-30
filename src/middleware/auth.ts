@@ -20,6 +20,8 @@ export type AppEnv = {
     ORDERS_FROM_EMAIL?: string;
     EVENTS_FROM_EMAIL?: string;
     ORDERS_ADMIN_EMAIL?: string;
+    MERCADOPAGO_ACCESS_TOKEN?: string;
+    MERCADOPAGO_WEBHOOK_URL?: string;
     CORS_ORIGINS?: string;
   };
   Variables: {

@@ -64,7 +64,7 @@ export function buildNewEventEmailHtml(content: NewEventEmailContent): string {
           <tr>
             <td style="padding:20px 32px 28px;border-top:1px solid #e4e2de;background-color:#fbf9f5;">
               <p style="margin:0;font-size:12px;line-height:1.5;color:#827470;text-align:center;">
-                Recibís este mail porque activaste alertas de eventos en tu perfil.
+                Recibís este mail porque te suscribiste a las novedades de La Mesa Social.
               </p>
             </td>
           </tr>
@@ -87,5 +87,5 @@ ${content.eventStartsAt}
 
 Ver evento: ${content.eventUrl}
 
-Recibís este mail porque activaste alertas de eventos en tu perfil.`;
+Recibís este mail porque te suscribiste a las novedades de La Mesa Social.`;
 }

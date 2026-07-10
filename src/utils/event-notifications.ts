@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import type { createDbClient } from "../db";
-import { users } from "../db/schema";
+import { newsletterSubscribers, users } from "../db/schema";
 import {
   buildNewEventEmailHtml,
   buildNewEventEmailText,
@@ -79,8 +79,22 @@ export async function notifySubscribersOfNewEvent(
     .where(and(eq(users.isActive, true), eq(users.notifyEvents, true)))
     .all();
 
+  const publicSubscribers = await db
+    .select({ email: newsletterSubscribers.email })
+    .from(newsletterSubscribers)
+    .all();
+
+  const recipients = new Map(
+    subscribers.map((subscriber) => [subscriber.email, subscriber]),
+  );
+  for (const subscriber of publicSubscribers) {
+    if (!recipients.has(subscriber.email)) {
+      recipients.set(subscriber.email, { email: subscriber.email, name: "jugador/a" });
+    }
+  }
+
   await Promise.allSettled(
-    subscribers.map((subscriber) => sendNewEventEmail(config, subscriber, event)),
+    [...recipients.values()].map((subscriber) => sendNewEventEmail(config, subscriber, event)),
   );
 }
 

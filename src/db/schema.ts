@@ -23,6 +23,12 @@ export const users = sqliteTable("users", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
 
+export const newsletterSubscribers = sqliteTable("newsletter_subscribers", {
+  id: text("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
 export const refreshTokens = sqliteTable("refresh_tokens", {
   id: text("id").primaryKey(),
   userId: text("user_id")

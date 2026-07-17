@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, lt, sql } from "drizzle-orm";
 import { createDbClient } from "../db";
-import { pedidoItems, pedidos, productos, users } from "../db/schema";
+import { couponRedemptions, coupons, pedidoItems, pedidos, productos, users } from "../db/schema";
 import { authMiddleware, adminOnly, type AppEnv } from "../middleware/auth";
 import {
   resolveEmailConfig,
@@ -10,6 +10,7 @@ import {
 } from "../utils/email";
 import { generateId } from "../utils/jwt";
 import { createMercadoPagoPreference } from "../utils/mercadopago";
+import { resolveCoupon } from "../utils/coupons";
 
 const pedidosRoutes = new Hono<AppEnv>();
 
@@ -53,7 +54,6 @@ async function rollbackPedidoReservation(
       .update(productos)
       .set({
         stock: restoredStock,
-        status: "available",
         updatedAt: new Date(),
       })
       .where(eq(productos.id, item.productoId))
@@ -67,6 +67,14 @@ async function deletePedido(db: ReturnType<typeof createDbClient>, pedidoId: str
   await db.delete(pedidos).where(eq(pedidos.id, pedidoId)).run();
 }
 
+async function releaseCouponUse(db: ReturnType<typeof createDbClient>, couponId: string) {
+  await db
+    .update(coupons)
+    .set({ usedCount: sql`max(${coupons.usedCount} - 1, 0)`, updatedAt: new Date() })
+    .where(eq(coupons.id, couponId))
+    .run();
+}
+
 function formatPedidoResponse(
   pedido: typeof pedidos.$inferSelect,
   items: (typeof pedidoItems.$inferSelect)[],
@@ -75,6 +83,8 @@ function formatPedidoResponse(
     id: pedido.id,
     status: pedido.status,
     subtotal: pedido.subtotal,
+    couponCode: pedido.couponCode,
+    discountAmount: pedido.discountAmount,
     shippingCost: pedido.shippingCost,
     total: pedido.total,
     customerName: pedido.customerName,
@@ -107,6 +117,7 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
     notes?: string;
     paymentProvider?: PaymentProvider;
     deliveryMethod?: DeliveryMethod;
+    couponCode?: string;
   }>();
 
   const rawItems = body.items ?? [];
@@ -141,7 +152,6 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
     quantity: number;
     lineTotal: number;
     newStock: number;
-    newStatus: "available" | "sold_out";
   }[] = [];
 
   for (const [productoId, quantity] of merged.entries()) {
@@ -149,7 +159,7 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
     if (!producto || producto.status === "draft") {
       return c.json({ error: `Producto no disponible: ${productoId}` }, 400);
     }
-    if (producto.status === "sold_out" || producto.stock < quantity) {
+    if (producto.stock < quantity) {
       return c.json({ error: `Stock insuficiente para "${producto.title}"` }, 409);
     }
 
@@ -161,14 +171,15 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
       quantity,
       lineTotal: producto.price * quantity,
       newStock,
-      newStatus: newStock > 0 ? "available" : "sold_out",
     });
   }
 
   const subtotal = lineItems.reduce((sum, item) => sum + item.lineTotal, 0);
+  const couponResult = await resolveCoupon(db, body.couponCode, subtotal);
+  if (couponResult.error) return c.json({ error: couponResult.error }, 400);
   const deliveryMethod = resolveDeliveryMethod(body.deliveryMethod);
   const { shippingCost, shippingCity } = deliveryDetails(deliveryMethod);
-  const total = subtotal + shippingCost;
+  const total = subtotal - couponResult.discountAmount + shippingCost;
   const now = new Date();
   const pedidoId = generateId();
   const notes = typeof body.notes === "string" ? body.notes.trim().slice(0, 500) : null;
@@ -179,6 +190,8 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
     userId,
     status: "pending",
     subtotal,
+    couponCode: couponResult.code,
+    discountAmount: couponResult.discountAmount,
     shippingCost,
     total,
     customerName: user.name,
@@ -190,6 +203,41 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
     createdAt: now,
     updatedAt: now,
   }).run();
+
+  let claimedCouponId: string | null = null;
+  if (couponResult.coupon) {
+    const coupon = couponResult.coupon;
+    const claim = await db
+      .update(coupons)
+      .set({ usedCount: sql`${coupons.usedCount} + 1`, updatedAt: now })
+      .where(
+        coupon.usageLimit === null
+          ? and(eq(coupons.id, coupon.id), eq(coupons.isActive, true))
+          : and(
+              eq(coupons.id, coupon.id),
+              eq(coupons.isActive, true),
+              lt(coupons.usedCount, coupon.usageLimit),
+            ),
+      )
+      .returning({ id: coupons.id })
+      .get();
+    if (!claim) {
+      await deletePedido(db, pedidoId);
+      return c.json({ error: "El cupón alcanzó su límite de usos" }, 409);
+    }
+    claimedCouponId = coupon.id;
+    const couponId = claimedCouponId;
+    try {
+      await db.insert(couponRedemptions).values({
+        id: generateId(), couponId, pedidoId, userId,
+        discountAmount: couponResult.discountAmount, createdAt: now,
+      }).run();
+    } catch (error) {
+      await releaseCouponUse(db, couponId);
+      await deletePedido(db, pedidoId);
+      throw error;
+    }
+  }
 
   const shouldReserveStock = paymentProvider === "manual";
   const reservedItems: typeof lineItems = [];
@@ -211,7 +259,6 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
           .update(productos)
           .set({
             stock: item.newStock,
-            status: item.newStatus,
             updatedAt: now,
           })
           .where(eq(productos.id, item.productoId))
@@ -225,6 +272,7 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
     } else {
       await deletePedido(db, pedidoId);
     }
+    if (claimedCouponId) await releaseCouponUse(db, claimedCouponId);
     throw error;
   }
 
@@ -253,7 +301,15 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
           name: pedido.customerName,
           email: pedido.customerEmail,
         },
-        items: [
+        items: pedido.discountAmount > 0
+          ? [{
+              id: `pedido-${pedido.id}`,
+              title: `Pedido La Mesa Social (${pedido.couponCode})`,
+              quantity: 1,
+              unit_price: pedido.total,
+              currency_id: "ARS" as const,
+            }]
+          : [
           ...savedItems.map((item) => ({
             id: item.productoId,
             title: item.title,
@@ -306,6 +362,7 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
       );
     } catch (error) {
       await deletePedido(db, pedido.id);
+      if (claimedCouponId) await releaseCouponUse(db, claimedCouponId);
       throw error;
     }
   }
@@ -323,6 +380,8 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
         lineTotal: item.lineTotal,
       })),
       subtotal: pedido.subtotal,
+      couponCode: pedido.couponCode,
+      discountAmount: pedido.discountAmount,
       shippingCost: pedido.shippingCost,
       total: pedido.total,
       shippingCity: pedido.shippingCity,

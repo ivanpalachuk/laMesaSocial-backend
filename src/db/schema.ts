@@ -111,7 +111,7 @@ export const productos = sqliteTable("productos", {
   stock: integer("stock").notNull().default(1),
   imageKey: text("image_key"),
   imageKeys: text("image_keys").notNull().default("[]"),
-  status: text("status", { enum: ["available", "sold_out", "draft"] })
+  status: text("status", { enum: ["available", "draft"] })
     .notNull()
     .default("available"),
   enLudoteca: integer("en_ludoteca", { mode: "boolean" }).notNull().default(false),
@@ -183,6 +183,8 @@ export const pedidos = sqliteTable("pedidos", {
     .notNull()
     .default("pending"),
   subtotal: integer("subtotal").notNull(),
+  couponCode: text("coupon_code"),
+  discountAmount: integer("discount_amount").notNull().default(0),
   shippingCost: integer("shipping_cost").notNull().default(2500),
   total: integer("total").notNull(),
   customerName: text("customer_name").notNull(),
@@ -197,6 +199,41 @@ export const pedidos = sqliteTable("pedidos", {
   paymentLastPayload: text("payment_last_payload"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});
+
+export const coupons = sqliteTable("coupons", {
+  id: text("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  discountType: text("discount_type", { enum: ["percentage", "fixed"] }).notNull(),
+  discountValue: integer("discount_value").notNull(),
+  minimumSubtotal: integer("minimum_subtotal"),
+  maximumDiscount: integer("maximum_discount"),
+  usageLimit: integer("usage_limit"),
+  usedCount: integer("used_count").notNull().default(0),
+  startsAt: integer("starts_at", { mode: "timestamp" }),
+  expiresAt: integer("expires_at", { mode: "timestamp" }),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  createdBy: text("created_by")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});
+
+export const couponRedemptions = sqliteTable("coupon_redemptions", {
+  id: text("id").primaryKey(),
+  couponId: text("coupon_id")
+    .notNull()
+    .references(() => coupons.id, { onDelete: "restrict" }),
+  pedidoId: text("pedido_id")
+    .notNull()
+    .unique()
+    .references(() => pedidos.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  discountAmount: integer("discount_amount").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
 export const pedidoItems = sqliteTable("pedido_items", {

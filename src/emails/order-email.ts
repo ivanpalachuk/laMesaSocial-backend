@@ -13,6 +13,8 @@ export type OrderEmailContent = {
   orderId: string;
   items: OrderEmailItem[];
   subtotal: number;
+  couponCode?: string | null;
+  discountAmount?: number;
   shippingCost: number;
   total: number;
   shippingCity: string;
@@ -82,6 +84,7 @@ export function buildOrderConfirmationEmailHtml(content: OrderEmailContent): str
               </table>
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 20px;">
                 <tr><td style="padding:4px 0;color:#504441;">Subtotal</td><td align="right" style="padding:4px 0;font-weight:700;">${formatMoney(content.subtotal)}</td></tr>
+                ${content.discountAmount ? `<tr><td style="padding:4px 0;color:#2f6b3f;">Descuento (${escapeHtml(content.couponCode ?? "cupón")})</td><td align="right" style="padding:4px 0;font-weight:700;color:#2f6b3f;">−${formatMoney(content.discountAmount)}</td></tr>` : ""}
                 <tr><td style="padding:4px 0;color:#504441;">Envío</td><td align="right" style="padding:4px 0;font-weight:700;">${formatMoney(content.shippingCost)}</td></tr>
                 <tr><td style="padding:8px 0 0;font-size:18px;font-weight:700;color:#442a22;">Total</td><td align="right" style="padding:8px 0 0;font-size:18px;font-weight:700;color:#442a22;">${formatMoney(content.total)}</td></tr>
               </table>
@@ -119,7 +122,7 @@ Productos:
 ${lines.join("\n")}
 
 Subtotal: ${formatMoney(content.subtotal)}
-Envío: ${formatMoney(content.shippingCost)}
+${content.discountAmount ? `Descuento (${content.couponCode ?? "cupón"}): -${formatMoney(content.discountAmount)}\n` : ""}Envío: ${formatMoney(content.shippingCost)}
 Total: ${formatMoney(content.total)}
 
 Envío a: ${content.shippingCity}
@@ -155,6 +158,7 @@ export function buildOrderAdminEmailHtml(content: OrderEmailContent & { customer
       </thead>
       <tbody>${renderItemsRows(content.items)}</tbody>
     </table>
+    ${content.discountAmount ? `<p style="margin:8px 0;color:#2f6b3f;"><strong>Descuento (${escapeHtml(content.couponCode ?? "cupón")}):</strong> −${formatMoney(content.discountAmount)}</p>` : ""}
     <p style="margin:8px 0;"><strong>Total:</strong> ${formatMoney(content.total)}</p>
     <p style="margin:8px 0;"><strong>Notas del cliente:</strong> ${safeNotes}</p>
     <p style="margin:16px 0 0;font-size:13px;color:#827470;">ID completo: ${safeOrderId}</p>
@@ -175,7 +179,7 @@ Envío: ${content.shippingCity}
 
 ${lines.join("\n")}
 
-Total: ${formatMoney(content.total)}
+${content.discountAmount ? `Descuento (${content.couponCode ?? "cupón"}): -${formatMoney(content.discountAmount)}\n` : ""}Total: ${formatMoney(content.total)}
 Notas: ${content.notes?.trim() || "—"}
 
 ID: ${content.orderId}`;

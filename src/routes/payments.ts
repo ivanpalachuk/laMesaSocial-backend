@@ -61,7 +61,7 @@ async function reservePedidoStock(db: ReturnType<typeof createDbClient>, pedidoI
 
   for (const item of items) {
     const product = await db.select().from(productos).where(eq(productos.id, item.productoId)).get();
-    if (!product || product.status === "draft" || product.status === "sold_out" || product.stock < item.quantity) {
+    if (!product || product.status === "draft" || product.stock < item.quantity) {
       return false;
     }
   }
@@ -76,7 +76,6 @@ async function reservePedidoStock(db: ReturnType<typeof createDbClient>, pedidoI
       .update(productos)
       .set({
         stock: newStock,
-        status: newStock > 0 ? "available" : "sold_out",
         updatedAt: now,
       })
       .where(eq(productos.id, item.productoId))

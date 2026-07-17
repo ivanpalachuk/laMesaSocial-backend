@@ -11,6 +11,7 @@ import pedidosRoutes from "./routes/pedidos";
 import paymentsRoutes from "./routes/payments";
 import adminStatsRoutes from "./routes/admin-stats";
 import newsletterRoutes from "./routes/newsletter";
+import couponsRoutes from "./routes/coupons";
 import { adminOnly, authMiddleware, type AppEnv } from "./middleware/auth";
 
 const app = new Hono<AppEnv>();
@@ -64,6 +65,7 @@ app.route("/api/me", meRoutes);
 app.route("/api/pedidos", pedidosRoutes);
 app.route("/api/payments", paymentsRoutes);
 app.route("/api/newsletter", newsletterRoutes);
+app.route("/api/coupons", couponsRoutes);
 app.use("/api/admin/stats*", authMiddleware, adminOnly);
 app.route("/api/admin/stats", adminStatsRoutes);
 

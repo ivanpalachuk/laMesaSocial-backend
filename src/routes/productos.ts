@@ -8,7 +8,7 @@ import { generateId } from "../utils/jwt";
 const productosRoutes = new Hono<AppEnv>();
 
 type ProductoCondition = "nuevo" | "como_nuevo" | "usado";
-type ProductoStatus = "available" | "sold_out" | "draft";
+type ProductoStatus = "available" | "draft";
 type ProductoSortField =
   | "createdAt"
   | "title"
@@ -113,6 +113,7 @@ type ProductListFilters = {
   durationBand?: DurationBand;
   difficultyBand?: DifficultyBand;
   availableOnly?: boolean;
+  outOfStockOnly?: boolean;
 };
 
 function parseDurationBand(value: string | undefined): DurationBand | undefined {
@@ -125,6 +126,11 @@ function parseDifficultyBand(value: string | undefined): DifficultyBand | undefi
   return undefined;
 }
 
+function parseProductoStatus(value: unknown): ProductoStatus | undefined {
+  if (value === "available" || value === "draft") return value;
+  return undefined;
+}
+
 function buildProductListWhere(filters: ProductListFilters): SQL | undefined {
   const clauses: SQL[] = [];
 
@@ -133,6 +139,11 @@ function buildProductListWhere(filters: ProductListFilters): SQL | undefined {
     clauses.push(gt(productos.stock, 0));
   } else if (filters.status) {
     clauses.push(eq(productos.status, filters.status));
+  }
+
+  if (filters.outOfStockOnly) {
+    clauses.push(eq(productos.status, "available"));
+    clauses.push(lte(productos.stock, 0));
   }
 
   if (filters.q) {
@@ -241,11 +252,13 @@ function parseListPagination(c: Context<AppEnv>, defaultPageSize: number) {
 
 function parseListFilters(c: Context<AppEnv>): ProductListFilters {
   const q = (c.req.query("q") ?? "").trim();
-  const status = (c.req.query("status") ?? "").trim() as ProductoStatus;
+  const rawStatus = (c.req.query("status") ?? "").trim();
+  const status = parseProductoStatus(rawStatus);
   return {
     q: q || undefined,
     categories: parseCategoriesQuery(c),
     status: status || undefined,
+    outOfStockOnly: rawStatus === "sold_out",
     enLudoteca: parseBooleanQuery(c.req.query("enLudoteca")),
     esFavorito: parseBooleanQuery(c.req.query("esFavorito")),
     minPlayers: parseOptionalInt(c.req.query("minPlayers")),
@@ -436,13 +449,16 @@ productosRoutes.post("/", adminOnly, async (c) => {
     stock?: number;
     imageKey?: string | null;
     imageKeys?: string[];
-    status?: ProductoStatus;
+    status?: unknown;
   }>();
 
   if (!body.title || body.price === undefined) {
     return c.json({ error: "Missing required fields: title, price" }, 400);
   }
   if (body.price < 0) return c.json({ error: "Invalid price" }, 400);
+  if (body.stock !== undefined && body.stock < 0) return c.json({ error: "Invalid stock" }, 400);
+  const status = body.status === undefined ? "available" : parseProductoStatus(body.status);
+  if (!status) return c.json({ error: "Estado inválido" }, 400);
 
   const now = new Date();
   const normalizedImageKeys = normalizeImageKeysInput(body.imageKeys, body.imageKey);
@@ -462,7 +478,7 @@ productosRoutes.post("/", adminOnly, async (c) => {
     stock: body.stock ?? 1,
     imageKey: normalizedImageKeys[0] ?? null,
     imageKeys: serializeImageKeys(normalizedImageKeys),
-    status: (body.status ?? "available") as ProductoStatus,
+    status,
     enLudoteca: false,
     esFavorito: false,
     createdBy: userId,
@@ -499,7 +515,7 @@ productosRoutes.patch("/:id", adminOnly, async (c) => {
       stock: number;
       imageKey: string | null;
       imageKeys: string[];
-      status: ProductoStatus;
+      status: unknown;
       enLudoteca: boolean;
       esFavorito: boolean;
     }>
@@ -522,13 +538,20 @@ productosRoutes.patch("/:id", adminOnly, async (c) => {
     if (body.price < 0) return c.json({ error: "Invalid price" }, 400);
     patch.price = body.price;
   }
-  if (body.stock !== undefined) patch.stock = body.stock;
+  if (body.stock !== undefined) {
+    if (body.stock < 0) return c.json({ error: "Invalid stock" }, 400);
+    patch.stock = body.stock;
+  }
   if (body.imageKeys !== undefined || body.imageKey !== undefined) {
     const normalizedImageKeys = normalizeImageKeysInput(body.imageKeys, body.imageKey);
     patch.imageKeys = serializeImageKeys(normalizedImageKeys);
     patch.imageKey = normalizedImageKeys[0] ?? null;
   }
-  if (body.status !== undefined) patch.status = body.status;
+  if (body.status !== undefined) {
+    const status = parseProductoStatus(body.status);
+    if (!status) return c.json({ error: "Estado inválido" }, 400);
+    patch.status = status;
+  }
   if (body.enLudoteca !== undefined) patch.enLudoteca = body.enLudoteca;
   if (body.esFavorito !== undefined) patch.esFavorito = body.esFavorito;
 

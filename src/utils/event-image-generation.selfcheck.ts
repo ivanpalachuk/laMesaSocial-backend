@@ -40,8 +40,26 @@ assert(
 );
 assert(
   buildEventImagePrompt(completeEvent).includes("Usar el contexto solo para elegir clima") &&
-    buildEventImagePrompt(completeEvent).includes("primer plano de mesa con comida/bebida"),
+    buildEventImagePrompt(completeEvent).includes("primer plano de mesa con comida o bebida sin alcohol"),
   "prompt should use event data as visual context instead of rendered copy",
+);
+assert(
+  buildEventImagePrompt(completeEvent).includes("No mostrar alcohol bajo ninguna circunstancia") &&
+    buildEventImagePrompt(completeEvent).includes("sin cerveza"),
+  "prompt should never request alcohol",
+);
+assert(
+  buildEventImagePrompt({
+    ...completeEvent,
+    title: "Tarde infantil",
+    description: "Juegos para niñas y niños con sus familias.",
+  }).includes("Evento infantil o familiar") &&
+    !buildEventImagePrompt({
+      ...completeEvent,
+      title: "Tarde infantil",
+      description: "Juegos para niñas y niños con sus familias.",
+    }).includes("Encuentro social de personas adultas"),
+  "child-friendly events should request an age-appropriate family scene",
 );
 assert(
   buildEventImagePrompt(completeEvent).includes("Cero texto visible") &&

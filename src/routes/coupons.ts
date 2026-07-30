@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { createDbClient } from "../db";
-import { coupons, productos } from "../db/schema";
+import { couponRedemptions, coupons, pedidos, productos } from "../db/schema";
 import { adminOnly, authMiddleware, type AppEnv } from "../middleware/auth";
 import { normalizeCouponCode, resolveCoupon } from "../utils/coupons";
 import { generateId } from "../utils/jwt";
@@ -67,7 +67,61 @@ couponsRoutes.post("/validate", async (c) => {
 couponsRoutes.get("/admin", adminOnly, async (c) => {
   const db = createDbClient(c.env.DB);
   const rows = await db.select().from(coupons).orderBy(asc(coupons.code)).all();
-  return c.json({ coupons: rows.map(serializeCoupon) });
+  const attributionRows = await db
+    .select({
+      couponId: couponRedemptions.couponId,
+      discountAmount: couponRedemptions.discountAmount,
+      redeemedAt: couponRedemptions.createdAt,
+      pedidoId: pedidos.id,
+      customerName: pedidos.customerName,
+      customerEmail: pedidos.customerEmail,
+      status: pedidos.status,
+      paymentStatus: pedidos.paymentStatus,
+      total: pedidos.total,
+      createdAt: pedidos.createdAt,
+    })
+    .from(couponRedemptions)
+    .innerJoin(pedidos, eq(couponRedemptions.pedidoId, pedidos.id))
+    .orderBy(desc(couponRedemptions.createdAt))
+    .all();
+
+  const rowsByCoupon = new Map<string, typeof attributionRows>();
+  for (const row of attributionRows) {
+    const group = rowsByCoupon.get(row.couponId) ?? [];
+    group.push(row);
+    rowsByCoupon.set(row.couponId, group);
+  }
+
+  return c.json({
+    coupons: rows.map((coupon) => {
+      const attempts = rowsByCoupon.get(coupon.id) ?? [];
+      const sales = attempts.filter((row) => row.status === "confirmed" || row.status === "fulfilled");
+      const attributedRevenue = sales.reduce((sum, row) => sum + row.total, 0);
+      const attributedDiscount = sales.reduce((sum, row) => sum + row.discountAmount, 0);
+      return {
+        ...serializeCoupon(coupon),
+        analytics: {
+          attempts: attempts.length,
+          sales: sales.length,
+          attributedRevenue,
+          attributedDiscount,
+          averageTicket: sales.length ? Math.round(attributedRevenue / sales.length) : 0,
+          conversionRate: attempts.length ? Math.round((sales.length / attempts.length) * 1000) / 10 : 0,
+        },
+        orders: attempts.map((row) => ({
+          id: row.pedidoId,
+          customerName: row.customerName,
+          customerEmail: row.customerEmail,
+          status: row.status,
+          paymentStatus: row.paymentStatus,
+          total: row.total,
+          discountAmount: row.discountAmount,
+          createdAt: row.createdAt.toISOString(),
+          isSale: row.status === "confirmed" || row.status === "fulfilled",
+        })),
+      };
+    }),
+  });
 });
 
 couponsRoutes.post("/admin", adminOnly, async (c) => {

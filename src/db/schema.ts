@@ -236,6 +236,25 @@ export const couponRedemptions = sqliteTable("coupon_redemptions", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
+export const homeBanners = sqliteTable("home_banners", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  eyebrow: text("eyebrow"),
+  description: text("description"),
+  imageKey: text("image_key").notNull(),
+  ctaLabel: text("cta_label"),
+  ctaHref: text("cta_href"),
+  startsAt: integer("starts_at", { mode: "timestamp" }),
+  expiresAt: integer("expires_at", { mode: "timestamp" }),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdBy: text("created_by")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});
+
 export const pedidoItems = sqliteTable("pedido_items", {
   id: text("id").primaryKey(),
   pedidoId: text("pedido_id")

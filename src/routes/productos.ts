@@ -201,6 +201,7 @@ async function queryProductList(
   origin: string,
   filters: ProductListFilters,
   pagination: { page: number; pageSize: number; sortBy: ProductoSortField; sortOrder: SortOrder },
+  includeCost = false,
 ) {
   const whereClause = buildProductListWhere(filters);
 
@@ -228,7 +229,7 @@ async function queryProductList(
     .all();
 
   return {
-    productos: rows.map((r) => withImageUrl(origin, r)),
+    productos: rows.map((r) => withImageUrl(origin, r, includeCost)),
     pagination: {
       page: safePage,
       pageSize: pagination.pageSize,
@@ -341,8 +342,8 @@ function normalizeImageKeysInput(
   return [];
 }
 
-function withImageUrl(origin: string, row: typeof productos.$inferSelect) {
-  const { categories: rawCategories, imageKeys: rawImageKeys, ...rest } = row;
+function withImageUrl(origin: string, row: typeof productos.$inferSelect, includeCost = false) {
+  const { categories: rawCategories, imageKeys: rawImageKeys, cost, ...rest } = row;
   const imageKeys = parseImageKeys(rawImageKeys, row.imageKey);
   const imageUrls = imageKeys
     .map((key) => buildImageUrl(origin, key))
@@ -354,6 +355,7 @@ function withImageUrl(origin: string, row: typeof productos.$inferSelect) {
     imageUrls,
     imageKey: imageKeys[0] ?? null,
     imageUrl: imageUrls[0] ?? null,
+    ...(includeCost ? { cost } : {}),
   };
 }
 
@@ -477,7 +479,7 @@ productosRoutes.get("/admin/all", adminOnly, async (c) => {
   const pagination = parseListPagination(c, 20);
   const filters = parseListFilters(c);
 
-  const result = await queryProductList(db, origin, filters, pagination);
+  const result = await queryProductList(db, origin, filters, pagination, true);
   return c.json(result);
 });
 
@@ -497,6 +499,7 @@ productosRoutes.post("/", adminOnly, async (c) => {
     difficulty?: number;
     publisher?: string;
     price: number;
+    cost?: number;
     stock?: number;
     imageKey?: string | null;
     imageKeys?: string[];
@@ -507,6 +510,9 @@ productosRoutes.post("/", adminOnly, async (c) => {
     return c.json({ error: "Missing required fields: title, price" }, 400);
   }
   if (body.price < 0) return c.json({ error: "Invalid price" }, 400);
+  if (body.cost !== undefined && (!Number.isFinite(body.cost) || body.cost < 0)) {
+    return c.json({ error: "Invalid cost" }, 400);
+  }
   if (body.stock !== undefined && body.stock < 0) return c.json({ error: "Invalid stock" }, 400);
   const status = body.status === undefined ? "available" : parseProductoStatus(body.status);
   if (!status) return c.json({ error: "Estado inválido" }, 400);
@@ -526,6 +532,7 @@ productosRoutes.post("/", adminOnly, async (c) => {
     difficulty: body.difficulty ?? 1.0,
     publisher: body.publisher ?? null,
     price: body.price,
+    cost: body.cost ?? 0,
     stock: body.stock ?? 1,
     imageKey: normalizedImageKeys[0] ?? null,
     imageKeys: serializeImageKeys(normalizedImageKeys),
@@ -539,7 +546,7 @@ productosRoutes.post("/", adminOnly, async (c) => {
 
   await db.insert(productos).values(row).run();
   const origin = new URL(c.req.url).origin;
-  return c.json({ producto: withImageUrl(origin, row) }, 201);
+  return c.json({ producto: withImageUrl(origin, row, true) }, 201);
 });
 
 // Update
@@ -563,6 +570,7 @@ productosRoutes.patch("/:id", adminOnly, async (c) => {
       difficulty: number;
       publisher: string | null;
       price: number;
+      cost: number;
       stock: number;
       imageKey: string | null;
       imageKeys: string[];
@@ -589,6 +597,10 @@ productosRoutes.patch("/:id", adminOnly, async (c) => {
     if (body.price < 0) return c.json({ error: "Invalid price" }, 400);
     patch.price = body.price;
   }
+  if (body.cost !== undefined) {
+    if (!Number.isFinite(body.cost) || body.cost < 0) return c.json({ error: "Invalid cost" }, 400);
+    patch.cost = body.cost;
+  }
   if (body.stock !== undefined) {
     if (body.stock < 0) return c.json({ error: "Invalid stock" }, 400);
     patch.stock = body.stock;
@@ -609,7 +621,7 @@ productosRoutes.patch("/:id", adminOnly, async (c) => {
   await db.update(productos).set(patch).where(eq(productos.id, id)).run();
   const updated = await db.select().from(productos).where(eq(productos.id, id)).get();
   const origin = new URL(c.req.url).origin;
-  return c.json({ producto: withImageUrl(origin, updated!) });
+  return c.json({ producto: withImageUrl(origin, updated!, true) });
 });
 
 // Delete

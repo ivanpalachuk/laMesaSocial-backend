@@ -108,6 +108,7 @@ export const productos = sqliteTable("productos", {
   difficulty: real("difficulty").notNull().default(1.0),
   publisher: text("publisher"),
   price: integer("price").notNull().default(0),
+  cost: integer("cost").notNull().default(0),
   stock: integer("stock").notNull().default(1),
   imageKey: text("image_key"),
   imageKeys: text("image_keys").notNull().default("[]"),

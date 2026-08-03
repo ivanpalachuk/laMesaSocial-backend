@@ -41,7 +41,7 @@ function buildImageUrl(origin: string, imageKey: string | null) {
 }
 
 function withImageUrl(origin: string, row: typeof productos.$inferSelect) {
-  const { categories: rawCategories, ...rest } = row;
+  const { categories: rawCategories, cost: _cost, ...rest } = row;
   return {
     ...rest,
     categories: parseCategories(rawCategories),

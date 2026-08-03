@@ -4,6 +4,7 @@ import { createDbClient } from "../db";
 import { productos } from "../db/schema";
 import { adminOnly, authMiddleware, type AppEnv } from "../middleware/auth";
 import { generateId } from "../utils/jwt";
+import { priceMultiplierFromPercentage } from "../utils/price-adjustment";
 
 const productosRoutes = new Hono<AppEnv>();
 
@@ -418,6 +419,56 @@ productosRoutes.get("/:id", async (c) => {
 
 // All routes below require auth
 productosRoutes.use("*", authMiddleware);
+
+// Admin: brands with stock available for bulk price adjustments
+productosRoutes.get("/admin/publishers", adminOnly, async (c) => {
+  const db = createDbClient(c.env.DB);
+  const rows = await db
+    .select({
+      publisher: productos.publisher,
+      count: sql<number>`count(*)`,
+    })
+    .from(productos)
+    .where(and(
+      gt(productos.stock, 0),
+      sql`trim(coalesce(${productos.publisher}, '')) <> ''`,
+    ))
+    .groupBy(productos.publisher)
+    .orderBy(sql`lower(${productos.publisher})`)
+    .all();
+
+  return c.json({
+    publishers: rows
+      .filter((row): row is { publisher: string; count: number } => Boolean(row.publisher))
+      .map((row) => ({ publisher: row.publisher, count: Number(row.count) })),
+  });
+});
+
+// Admin: increase prices for one brand, only where stock is currently positive
+productosRoutes.patch("/admin/prices", adminOnly, async (c) => {
+  const db = createDbClient(c.env.DB);
+  const body = await c.req.json<{ publisher?: unknown; percentage?: unknown }>();
+  const publisher = typeof body.publisher === "string" ? body.publisher.trim() : "";
+  const multiplier = priceMultiplierFromPercentage(body.percentage);
+
+  if (!publisher) return c.json({ error: "La marca es obligatoria" }, 400);
+  if (multiplier === null) {
+    return c.json({ error: "El porcentaje debe ser mayor a 0 y menor o igual a 1000" }, 400);
+  }
+
+  const updated = await db
+    .update(productos)
+    .set({
+      // ponytail: prices remain whole ARS; add a decimal money model if cent precision is ever needed.
+      price: sql<number>`cast(round(${productos.price} * ${multiplier}) as integer)`,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(productos.publisher, publisher), gt(productos.stock, 0)))
+    .returning({ id: productos.id })
+    .all();
+
+  return c.json({ publisher, updated: updated.length });
+});
 
 // Admin: list all products regardless of status
 productosRoutes.get("/admin/all", adminOnly, async (c) => {

@@ -10,7 +10,8 @@
     "check:price-adjustment": "node --experimental-strip-types --test tests/price-adjustment.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply lamesa-social-db --local",
-    "db:migrate:remote": "wrangler d1 migrations apply lamesa-social-db --remote"
+    "db:migrate:remote": "wrangler d1 migrations apply lamesa-social-db --remote",
+    "db:migrate:production": "wrangler d1 migrations apply lamesa-social-db-prod --remote --env production"
   },
   "repository": {
     "type": "git",

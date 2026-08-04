@@ -113,6 +113,7 @@ type ProductListFilters = {
   maxPrice?: number | null;
   durationBand?: DurationBand;
   difficultyBand?: DifficultyBand;
+  storeOnly?: boolean;
   availableOnly?: boolean;
   outOfStockOnly?: boolean;
 };
@@ -145,6 +146,12 @@ function buildProductListWhere(filters: ProductListFilters): SQL | undefined {
   if (filters.outOfStockOnly) {
     clauses.push(eq(productos.status, "available"));
     clauses.push(lte(productos.stock, 0));
+  }
+
+  if (filters.storeOnly) {
+    clauses.push(eq(productos.status, "available"));
+    clauses.push(gt(productos.stock, 0));
+    clauses.push(eq(productos.enLudoteca, false));
   }
 
   if (filters.q) {
@@ -268,6 +275,7 @@ function parseListFilters(c: Context<AppEnv>): ProductListFilters {
     maxPrice: parseOptionalInt(c.req.query("maxPrice")),
     durationBand: parseDurationBand(c.req.query("durationBand")),
     difficultyBand: parseDifficultyBand(c.req.query("difficultyBand")),
+    storeOnly: parseBooleanQuery(c.req.query("storeOnly")) === true,
   };
 }
 

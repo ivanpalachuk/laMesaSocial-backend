@@ -7,7 +7,7 @@ import { normalizeCouponCode, resolveCoupon } from "../utils/coupons";
 import { generateId } from "../utils/jwt";
 
 const couponsRoutes = new Hono<AppEnv>();
-type DiscountType = "percentage" | "fixed";
+type DiscountType = "percentage" | "fixed" | "volume_percentage";
 
 couponsRoutes.use("*", authMiddleware);
 
@@ -21,6 +21,7 @@ function parseOptionalDate(value: unknown): Date | null | undefined {
 function serializeCoupon(coupon: typeof coupons.$inferSelect) {
   return {
     ...coupon,
+    discountType: coupon.maximumQuantity === null ? coupon.discountType : "volume_percentage",
     startsAt: coupon.startsAt?.toISOString() ?? null,
     expiresAt: coupon.expiresAt?.toISOString() ?? null,
     createdAt: coupon.createdAt.toISOString(),
@@ -45,20 +46,23 @@ couponsRoutes.post("/validate", async (c) => {
   if (!merged.size) return c.json({ error: "El carrito está vacío" }, 400);
 
   let subtotal = 0;
+  let itemQuantity = 0;
   for (const [productoId, quantity] of merged) {
     const producto = await db.select().from(productos).where(eq(productos.id, productoId)).get();
     if (!producto || producto.status === "draft" || producto.stock < quantity) {
       return c.json({ error: "Hay productos no disponibles en el carrito" }, 409);
     }
     subtotal += producto.price * quantity;
+    itemQuantity += quantity;
   }
 
-  const result = await resolveCoupon(db, body.code, subtotal);
+  const result = await resolveCoupon(db, body.code, subtotal, itemQuantity);
   if (result.error) return c.json({ error: result.error }, 400);
   if (!result.coupon || !result.code) return c.json({ error: "Ingresá un cupón" }, 400);
   return c.json({
     code: result.code,
     subtotal,
+    itemQuantity,
     discountAmount: result.discountAmount,
     discountedSubtotal: subtotal - result.discountAmount,
   });
@@ -129,12 +133,15 @@ couponsRoutes.post("/admin", adminOnly, async (c) => {
   const userId = c.get("userId");
   const body = await c.req.json<Record<string, unknown>>();
   const code = normalizeCouponCode(body.code);
-  const discountType = body.discountType as DiscountType;
+  const requestedDiscountType = body.discountType as DiscountType;
+  const isVolumeDiscount = requestedDiscountType === "volume_percentage";
+  const discountType = isVolumeDiscount ? "percentage" : requestedDiscountType;
   const discountValue = Math.floor(Number(body.discountValue));
   const minimumSubtotal = body.minimumSubtotal === null || body.minimumSubtotal === ""
     ? null : Math.floor(Number(body.minimumSubtotal));
   const maximumDiscount = body.maximumDiscount === null || body.maximumDiscount === ""
     ? null : Math.floor(Number(body.maximumDiscount));
+  const maximumQuantity = isVolumeDiscount ? Math.floor(Number(body.maximumQuantity)) : null;
   const usageLimit = body.usageLimit === null || body.usageLimit === ""
     ? null : Math.floor(Number(body.usageLimit));
   const parsedStartsAt = parseOptionalDate(body.startsAt);
@@ -154,6 +161,8 @@ couponsRoutes.post("/admin", adminOnly, async (c) => {
   if (discountType === "percentage" && discountValue > 100) return c.json({ error: "El porcentaje no puede superar 100" }, 400);
   if (minimumSubtotal !== null && (!Number.isFinite(minimumSubtotal) || minimumSubtotal < 0)) return c.json({ error: "Compra mínima inválida" }, 400);
   if (maximumDiscount !== null && (!Number.isFinite(maximumDiscount) || maximumDiscount <= 0)) return c.json({ error: "Tope inválido" }, 400);
+  if (isVolumeDiscount && (maximumQuantity === null || !Number.isFinite(maximumQuantity) || maximumQuantity <= 0)) return c.json({ error: "Cantidad máxima inválida" }, 400);
+  if (maximumQuantity !== null && discountValue * maximumQuantity > 100) return c.json({ error: "El porcentaje máximo no puede superar 100" }, 400);
   if (usageLimit !== null && (!Number.isFinite(usageLimit) || usageLimit <= 0)) return c.json({ error: "Límite inválido" }, 400);
   if (startsAt && expiresAt && startsAt >= expiresAt) return c.json({ error: "La vigencia es inválida" }, 400);
 
@@ -162,6 +171,7 @@ couponsRoutes.post("/admin", adminOnly, async (c) => {
     await db.insert(coupons).values({
       id: generateId(), code, discountType, discountValue, minimumSubtotal,
       maximumDiscount: discountType === "percentage" ? maximumDiscount : null,
+      maximumQuantity,
       usageLimit, usedCount: 0, startsAt, expiresAt,
       isActive: body.isActive !== false, createdBy: userId, createdAt: now, updatedAt: now,
     }).run();

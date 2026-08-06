@@ -175,7 +175,8 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
   }
 
   const subtotal = lineItems.reduce((sum, item) => sum + item.lineTotal, 0);
-  const couponResult = await resolveCoupon(db, body.couponCode, subtotal);
+  const itemQuantity = lineItems.reduce((sum, item) => sum + item.quantity, 0);
+  const couponResult = await resolveCoupon(db, body.couponCode, subtotal, itemQuantity);
   if (couponResult.error) return c.json({ error: couponResult.error }, 400);
   const deliveryMethod = resolveDeliveryMethod(body.deliveryMethod);
   const { shippingCost, shippingCity } = deliveryDetails(deliveryMethod);

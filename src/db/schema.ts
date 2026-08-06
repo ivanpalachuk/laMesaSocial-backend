@@ -209,6 +209,7 @@ export const coupons = sqliteTable("coupons", {
   discountValue: integer("discount_value").notNull(),
   minimumSubtotal: integer("minimum_subtotal"),
   maximumDiscount: integer("maximum_discount"),
+  maximumQuantity: integer("maximum_quantity"),
   usageLimit: integer("usage_limit"),
   usedCount: integer("used_count").notNull().default(0),
   startsAt: integer("starts_at", { mode: "timestamp" }),

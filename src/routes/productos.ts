@@ -11,6 +11,7 @@ const productosRoutes = new Hono<AppEnv>();
 type ProductoCondition = "nuevo" | "como_nuevo" | "usado";
 type ProductoStatus = "available" | "draft";
 type ProductoSortField =
+  | "id"
   | "createdAt"
   | "title"
   | "price"
@@ -26,6 +27,9 @@ const DEFAULT_CATEGORIES = ["otros"];
 
 function getSortColumn(sortBy: ProductoSortField) {
   switch (sortBy) {
+    case "id":
+      // ponytail: UUID order disperses brands probabilistically; use publisher round-robin if strict alternation is ever required.
+      return productos.id;
     case "title":
       return productos.title;
     case "price":
@@ -53,6 +57,7 @@ function parsePositiveInt(value: string | undefined, fallback: number) {
 function parseSortBy(value: string | undefined, fallback: ProductoSortField): ProductoSortField {
   if (!value) return fallback;
   const allowed: ProductoSortField[] = [
+    "id",
     "createdAt",
     "title",
     "price",

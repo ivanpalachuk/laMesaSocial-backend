@@ -5,6 +5,7 @@ import { productos } from "../db/schema";
 import { adminOnly, authMiddleware, type AppEnv } from "../middleware/auth";
 import { generateId } from "../utils/jwt";
 import { priceMultiplierFromPercentage } from "../utils/price-adjustment";
+import { allocateProductSlug } from "../utils/product-slug";
 
 const productosRoutes = new Hono<AppEnv>();
 
@@ -419,15 +420,25 @@ productosRoutes.get("/favoritos", async (c) => {
   return c.json({ productos: rows.map((r) => withImageUrl(origin, r)) });
 });
 
-// Public: single product
-productosRoutes.get("/:id", async (c) => {
+// Public: single product by canonical slug or legacy UUID
+productosRoutes.get("/:identifier", async (c) => {
   const db = createDbClient(c.env.DB);
   const origin = new URL(c.req.url).origin;
-  const row = await db
+  const identifier = c.req.param("identifier");
+  let row = await db
     .select()
     .from(productos)
-    .where(eq(productos.id, c.req.param("id")))
+    .where(eq(productos.id, identifier))
     .get();
+
+  if (!row) {
+    row = await db
+      .select()
+      .from(productos)
+      .where(eq(productos.slug, identifier))
+      .get();
+  }
+
   if (!row) return c.json({ error: "Producto not found" }, 404);
   return c.json({ producto: withImageUrl(origin, row) });
 });
@@ -519,7 +530,8 @@ productosRoutes.post("/", adminOnly, async (c) => {
     status?: unknown;
   }>();
 
-  if (!body.title || body.price === undefined) {
+  const title = body.title?.trim();
+  if (!title || body.price === undefined) {
     return c.json({ error: "Missing required fields: title, price" }, 400);
   }
   if (body.price < 0) return c.json({ error: "Invalid price" }, 400);
@@ -532,9 +544,18 @@ productosRoutes.post("/", adminOnly, async (c) => {
 
   const now = new Date();
   const normalizedImageKeys = normalizeImageKeysInput(body.imageKeys, body.imageKey);
+  const existingSlugs = await db
+    .select({ slug: productos.slug })
+    .from(productos)
+    .all();
+  const slug = allocateProductSlug(
+    title,
+    existingSlugs.flatMap(({ slug: existingSlug }) => existingSlug ? [existingSlug] : []),
+  );
   const row = {
     id: generateId(),
-    title: body.title,
+    slug,
+    title,
     description: body.description ?? null,
     categories: serializeCategories(normalizeCategoriesInput(body.categories)),
     condition: (body.condition ?? "nuevo") as ProductoCondition,

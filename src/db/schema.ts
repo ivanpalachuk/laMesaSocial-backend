@@ -95,6 +95,7 @@ export const encuentroComments = sqliteTable("encuentro_comments", {
 
 export const productos = sqliteTable("productos", {
   id: text("id").primaryKey(),
+  slug: text("slug").unique(),
   title: text("title").notNull(),
   description: text("description"),
   categories: text("categories").notNull().default('["otros"]'),

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { createDbClient } from "../db";
 import { couponRedemptions, coupons, pedidos, productos } from "../db/schema";
 import { adminOnly, authMiddleware, type AppEnv } from "../middleware/auth";
@@ -24,6 +24,7 @@ function serializeCoupon(coupon: typeof coupons.$inferSelect) {
     discountType: coupon.maximumQuantity === null ? coupon.discountType : "volume_percentage",
     startsAt: coupon.startsAt?.toISOString() ?? null,
     expiresAt: coupon.expiresAt?.toISOString() ?? null,
+    deletedAt: coupon.deletedAt?.toISOString() ?? null,
     createdAt: coupon.createdAt.toISOString(),
     updatedAt: coupon.updatedAt.toISOString(),
   };
@@ -70,7 +71,7 @@ couponsRoutes.post("/validate", async (c) => {
 
 couponsRoutes.get("/admin", adminOnly, async (c) => {
   const db = createDbClient(c.env.DB);
-  const rows = await db.select().from(coupons).orderBy(asc(coupons.code)).all();
+  const rows = await db.select().from(coupons).where(isNull(coupons.deletedAt)).orderBy(asc(coupons.code)).all();
   const attributionRows = await db
     .select({
       couponId: couponRedemptions.couponId,
@@ -186,7 +187,7 @@ couponsRoutes.patch("/admin/:id", adminOnly, async (c) => {
   const db = createDbClient(c.env.DB);
   const id = c.req.param("id");
   if (!id) return c.json({ error: "Cupón no encontrado" }, 404);
-  const existing = await db.select().from(coupons).where(eq(coupons.id, id)).get();
+  const existing = await db.select().from(coupons).where(and(eq(coupons.id, id), isNull(coupons.deletedAt))).get();
   if (!existing) return c.json({ error: "Cupón no encontrado" }, 404);
   const body = await c.req.json<{ isActive?: boolean; usageLimit?: number | null; expiresAt?: string | null }>();
   const patch: Partial<typeof coupons.$inferInsert> = { updatedAt: new Date() };
@@ -203,9 +204,24 @@ couponsRoutes.patch("/admin/:id", adminOnly, async (c) => {
     if (existing.startsAt && expiresAt && existing.startsAt >= expiresAt) return c.json({ error: "La vigencia es inválida" }, 400);
     patch.expiresAt = expiresAt;
   }
-  await db.update(coupons).set(patch).where(eq(coupons.id, id)).run();
-  const coupon = await db.select().from(coupons).where(eq(coupons.id, id)).get();
-  return c.json({ coupon: coupon ? serializeCoupon(coupon) : null });
+  const coupon = await db.update(coupons).set(patch)
+    .where(and(eq(coupons.id, id), isNull(coupons.deletedAt))).returning().get();
+  if (!coupon) return c.json({ error: "Cupón no encontrado" }, 404);
+  return c.json({ coupon: serializeCoupon(coupon) });
+});
+
+couponsRoutes.delete("/admin/:id", adminOnly, async (c) => {
+  const db = createDbClient(c.env.DB);
+  const id = c.req.param("id");
+  if (!id) return c.json({ error: "Cupón no encontrado" }, 404);
+  const now = new Date();
+  // Keep redemptions and order attribution intact while preventing new uses.
+  const deleted = await db.update(coupons)
+    .set({ isActive: false, deletedAt: now, updatedAt: now })
+    .where(and(eq(coupons.id, id), isNull(coupons.deletedAt)))
+    .returning({ id: coupons.id }).get();
+  if (!deleted) return c.json({ error: "Cupón no encontrado" }, 404);
+  return c.body(null, 204);
 });
 
 export default couponsRoutes;

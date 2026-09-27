@@ -9,6 +9,7 @@ export type DiscountableCoupon = {
   startsAt: Date | null;
   expiresAt: Date | null;
   isActive: boolean;
+  deletedAt?: Date | null;
 };
 
 export function calculateCouponDiscount(
@@ -17,6 +18,7 @@ export function calculateCouponDiscount(
   itemQuantity: number,
   now = new Date(),
 ) {
+  if (coupon.deletedAt) return { error: "Cupón inválido" } as const;
   if (!coupon.isActive) return { error: "El cupón no está activo" } as const;
   if (coupon.startsAt && coupon.startsAt > now) return { error: "El cupón todavía no está vigente" } as const;
   if (coupon.expiresAt && coupon.expiresAt < now) return { error: "El cupón venció" } as const;

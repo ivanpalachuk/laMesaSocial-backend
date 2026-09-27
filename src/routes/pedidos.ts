@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { and, desc, eq, lt, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import { createDbClient } from "../db";
 import { couponRedemptions, coupons, pedidoItems, pedidos, productos, users } from "../db/schema";
 import { authMiddleware, adminOnly, type AppEnv } from "../middleware/auth";
@@ -213,10 +213,11 @@ pedidosRoutes.post("/", async (c: PedidoContext) => {
       .set({ usedCount: sql`${coupons.usedCount} + 1`, updatedAt: now })
       .where(
         coupon.usageLimit === null
-          ? and(eq(coupons.id, coupon.id), eq(coupons.isActive, true))
+          ? and(eq(coupons.id, coupon.id), eq(coupons.isActive, true), isNull(coupons.deletedAt))
           : and(
               eq(coupons.id, coupon.id),
               eq(coupons.isActive, true),
+              isNull(coupons.deletedAt),
               lt(coupons.usedCount, coupon.usageLimit),
             ),
       )

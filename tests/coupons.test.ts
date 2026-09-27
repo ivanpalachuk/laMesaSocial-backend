@@ -22,3 +22,7 @@ test("volume coupon increases by item quantity and stops at its configured tier"
   assert.deepEqual(calculateCouponDiscount(coupon, 10_000, 3), { discountAmount: 1_500 });
   assert.deepEqual(calculateCouponDiscount(coupon, 10_000, 4), { discountAmount: 1_500 });
 });
+
+test("deleted volume coupon cannot produce a discount", () => {
+  assert.deepEqual(calculateCouponDiscount({ ...coupon, deletedAt: new Date() }, 10_000, 3), { error: "Cupón inválido" });
+});

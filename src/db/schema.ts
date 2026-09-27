@@ -216,6 +216,7 @@ export const coupons = sqliteTable("coupons", {
   startsAt: integer("starts_at", { mode: "timestamp" }),
   expiresAt: integer("expires_at", { mode: "timestamp" }),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  deletedAt: integer("deleted_at", { mode: "timestamp" }),
   createdBy: text("created_by")
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),
